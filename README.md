@@ -6,23 +6,17 @@ We proved that GNNs can create completely new and useful node features even when
 
 Paper: https://arxiv.org/abs/2301.10956
 
-## ✨ Summary
+## 🚀 SimpleScale
 
-<img src="./imgs/illust1.png">
+**SimpleScale** is the core model implemented in this project. It is designed to verify that GNNs can recover hidden node features solely from graph structure.
 
-▲ **Traditional View of GNNs**: GNNs filter features by mixing them with neighboring nodes.
+<img src="./imgs/simple_scale.png">
 
-<img src="./imgs/illust2.png">
+*   **Input**: It takes trivial or random features combined with structural descriptors (e.g., PageRank, Degree, Clustering Coefficient).
+*   **Architecture**: It utilizes a simplified GraphSAGE backbone to aggregate local structural information.
+*   **Objective**: It optimizes the alignment between the reconstructed geometry and the underlying manifold, effectively "decoding" the graph.
 
-▲ **Traditional View of GNNs**: If the features are garbage, the outputs are also garbage.
-
-<img src="./imgs/illust3.png">
-
-▲ **Our Results**: We showed that GNNs create informative node features by themselves even when the input features are uninformative by absorbing information from the underlying graph. Therefore, GNNs work even when the input node features are uninformative.
-
-<img src="./imgs/illust4.png">
-
-▲ **Problem Setting**: We generate the input graph from hidden node features. We show that GNNs can recover them solely from the vanilla graph structure.
+The scripts `semi_moon.py` and others use `GraphSAGE_SimpleScale` to demonstrate this capability on various datasets.
 
 ## 💿 Dependency
 
@@ -51,33 +45,10 @@ $ wget https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.dat
 Reproduce the results by the following commands.
 
 ```
-$ python shortest_path_plot.py
 $ python semi_moon.py
-$ python semi_adult.py
-$ python ind_moon.py
-$ python accuracy_of_recovered_features.py
 ```
 
 The results are saved in `imgs` directiory.
-
-### Results
-
-<img src="./imgs/results_semi.png">
-
-▲ GNNs succeed in recovering the hidden features.
-
-<img src="./imgs/results_ind.png">
-
-▲ GNNs succeed in recovering the hidden features even in the inductive setting.
-
-| | Cora | CiteSeer | PubMed | Coauthor CS | Coauthor Physics | Amazon Computers | Amazon Photo |
-| ---- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Baseline $\boldsymbol{x}^{\text{syn}}_v$ | 0.122 | 0.231 | 0.355 | 0.066 | 0.307 | 0.185 | 0.207 |
-| Recovered Feature $\hat{\boldsymbol{z}}_v$ | **0.671** | **0.640** | **0.653** | **0.492** | **0.745** | **0.528** | **0.566** |
-
-▲ These results show that the recovered features $\hat{\boldsymbol{z}}_v$ by GNNs are informative for downstream tasks while the input node features $\boldsymbol{x}^{\text{syn}}_v$ are not at all. This indicates that GNNs extract meaningful information solely from the graph structure. We stress that this problem setting where no node features are available is extremely challenging for GNNs, and the results above show that GNNs work well (somewhat unexpectedly) in such a challenging situation.
-
-Please refer to the paper for more details.
 
 ## 🖋️ Citation
 
