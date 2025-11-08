@@ -74,15 +74,29 @@ class GIN(torch.nn.Module):
 class GAT(torch.nn.Module):
     def __init__(self, m):
         super(GAT, self).__init__()
-        self.conv1 = GATConv(m + 2, 16, 8)
-        self.conv1.lin_src.weight.data.normal_(0, 1e-3)
-        self.conv1.lin_dst.weight.data.normal_(0, 1e-3)
-        self.conv2 = GATConv(128, 16, 8)
-        self.conv2.lin_src.weight.data.normal_(0, 1e-3)
-        self.conv2.lin_dst.weight.data.normal_(0, 1e-3)
-        self.conv3 = GATConv(128, 2, 1)
-        self.conv3.lin_src.weight.data.normal_(0, 1e-3)
-        self.conv3.lin_dst.weight.data.normal_(0, 1e-3)
+        self.conv1 = GATConv(m + 2, 16, heads=8)
+        if hasattr(self.conv1, 'lin_src') and self.conv1.lin_src is not None:
+            self.conv1.lin_src.weight.data.normal_(0, 1e-3)
+        if hasattr(self.conv1, 'lin_dst') and self.conv1.lin_dst is not None:
+            self.conv1.lin_dst.weight.data.normal_(0, 1e-3)
+        if hasattr(self.conv1, 'lin') and self.conv1.lin is not None:
+            self.conv1.lin.weight.data.normal_(0, 1e-3)
+            
+        self.conv2 = GATConv(128, 16, heads=8)
+        if hasattr(self.conv2, 'lin_src') and self.conv2.lin_src is not None:
+            self.conv2.lin_src.weight.data.normal_(0, 1e-3)
+        if hasattr(self.conv2, 'lin_dst') and self.conv2.lin_dst is not None:
+            self.conv2.lin_dst.weight.data.normal_(0, 1e-3)
+        if hasattr(self.conv2, 'lin') and self.conv2.lin is not None:
+            self.conv2.lin.weight.data.normal_(0, 1e-3)
+            
+        self.conv3 = GATConv(128, 2, heads=1)
+        if hasattr(self.conv3, 'lin_src') and self.conv3.lin_src is not None:
+            self.conv3.lin_src.weight.data.normal_(0, 1e-3)
+        if hasattr(self.conv3, 'lin_dst') and self.conv3.lin_dst is not None:
+            self.conv3.lin_dst.weight.data.normal_(0, 1e-3)
+        if hasattr(self.conv3, 'lin') and self.conv3.lin is not None:
+            self.conv3.lin.weight.data.normal_(0, 1e-3)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index

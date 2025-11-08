@@ -1,14 +1,13 @@
-*
+.DS_Store
+.DS_Store?
+__MACOSX
 
-!*/
-!*.py
-!README.md
-!imgs/visible.png
-!imgs/illust1.png
-!imgs/illust2.png
-!imgs/illust3.png
-!imgs/illust4.png
-!imgs/results_semi.png
-!imgs/results_ind.png
-!requirements.txt
-!.gitignore
+.vscode/
+__pycache__/
+
+venv/
+env/
+
+logs/
+visualize/
+imgs/

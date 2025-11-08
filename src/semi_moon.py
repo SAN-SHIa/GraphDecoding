@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as PathEffects
 from scipy.sparse import csr_matrix
 import networkx as nx
-
 from scipy.linalg import orthogonal_procrustes
 
 import torch
@@ -13,8 +12,23 @@ import torch.optim as optim
 from torch_geometric.data import Data
 
 from sklearn.manifold import TSNE
-
 from util import Net, GIN, GAT, moon, stationary, reconstruct, dG
+import logging
+import tqdm
+import datetime
+
+os.makedirs('logs', exist_ok=True)
+LOG_FILE = 'logs/{}_semi_moon.log'.format(datetime.datetime.now().strftime('%m%d%H%M'))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE, mode='w'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("semi_moon")
 
 
 np.random.seed(0)
@@ -36,10 +50,12 @@ edge_index = np.vstack([fr, to])
 edge_index = torch.tensor(edge_index, dtype=torch.long)
 X = torch.tensor([[K, n] for i in range(n)], dtype=torch.float)
 
+logger.info(f"初始化完成: n={n}, m={m}, K={K}, n_train={n_train}")
+
 net = Net()
 optimizer = optim.Adam(net.parameters(), lr=0.001)
 net.train()
-for i in range(100):
+for i in tqdm.tqdm(range(100)):
     # Note 1: In the original formulation, $g$, i.e., the neural network for the scale function, should be used in reconstruct(K, pr, n, m, fr, to), namely, in the definition of $s$. We factorize $s$ and multiply g after we reconstruct the features. This is mathematically equivalent. We do this to avoid memory overflow due to long backpropagation.
     # Note 2: We roughly standardize n for stability by (n - 3000) / 3000. This does not affect the representational power of GNNs by merging them into the network parameters.
     pr = stationary(A)
@@ -50,7 +66,7 @@ for i in range(100):
     rec = rec_orig * (g ** 0.5)
     loss = dG(torch.FloatTensor(x)[train_ind], rec[train_ind])
 
-    print(n, float(g), float(loss))
+    # print(n, float(g), float(loss))
 
     optimizer.zero_grad()
     loss.backward()
@@ -58,51 +74,57 @@ for i in range(100):
 
 R, _ = orthogonal_procrustes(x, rec.detach().numpy())
 rec_proposed = rec.detach().numpy() @ R.T
-loss_proposed = float(dG(torch.FloatTensor(x), rec))
+loss_proposed = float(dG(torch.FloatTensor(x), torch.FloatTensor(rec_proposed)))
 
+logger.info(f"✅ Proposed method training completed: dG={loss_proposed:.4f}")
 
 net = GIN(m)
 optimizer = optim.Adam(net.parameters(), lr=0.001)
 net.train()
-for epoch in range(100):
+for epoch in tqdm.tqdm(range(100)):
     ind = torch.eye(n)[:, torch.randperm(n)[:m]]
     X_extended = torch.hstack([X, ind])
     data = Data(x=X_extended, edge_index=edge_index)
     rec = net(data)
     loss = dG(torch.FloatTensor(x)[train_ind], rec[train_ind])
-    print(float(loss))
+    # print(float(loss))
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
 R, _ = orthogonal_procrustes(x, rec.detach().numpy())
 rec_GIN = rec.detach().numpy() @ R.T
-loss_GIN = float(dG(torch.FloatTensor(x), rec))
+loss_GIN = float(dG(torch.FloatTensor(x), torch.FloatTensor(rec_GIN)))
+
+logger.info(f"✅ GIN method training completed: dG={loss_GIN:.4f}")
 
 net = GAT(m)
 optimizer = optim.Adam(net.parameters(), lr=0.001)
 net.train()
-for epoch in range(100):
+for epoch in tqdm.tqdm(range(100)):
     ind = torch.eye(n)[:, torch.randperm(n)[:m]]
     X_extended = torch.hstack([X, ind])
     data = Data(x=X_extended, edge_index=edge_index)
     rec = net(data)
     loss = dG(torch.FloatTensor(x)[train_ind], rec[train_ind])
-    print(float(loss))
+    # print(float(loss))
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
 R, _ = orthogonal_procrustes(x, rec.detach().numpy())
 rec_GAT = rec.detach().numpy() @ R.T
-loss_GAT = float(dG(torch.FloatTensor(x), rec))
+loss_GAT = float(dG(torch.FloatTensor(x), torch.FloatTensor(rec_GAT)))
+
+logger.info(f"✅ GAT training completed: dG={loss_GAT:.4f}")
 
 ind = torch.eye(n)[:, torch.randperm(n)[:m]]
 X_extended = torch.hstack([X, ind])
 X_embedded = TSNE(n_components=2, random_state=0, init='pca').fit_transform(X_extended.numpy())
-loss_tSNE = float(dG(torch.FloatTensor(x), X_embedded))
+loss_tSNE = float(dG(torch.FloatTensor(x), torch.FloatTensor(X_embedded)))
+logger.info(f"✅ tSNE embedding completed: dG={loss_tSNE:.4f}")
 
-
+logger.info("🎨 visualization...")
 c = x[:, 0].argsort().argsort()
 fig = plt.figure(figsize=(14, 4))
 ax = fig.add_subplot(2, 3, 1)
@@ -157,9 +179,10 @@ txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
 
 fig.subplots_adjust()
 
-if not os.path.exists('imgs'):
-    os.mkdir('imgs')
+if not os.path.exists('visualize'):
+    os.mkdir('visualize')
 
-fig.savefig('imgs/semi_moon.png', bbox_inches='tight', dpi=300)
-fig.savefig('imgs/semi_moon.pdf', bbox_inches='tight', dpi=300)
-fig.savefig('imgs/semi_moon.svg', bbox_inches='tight', dpi=300)
+fig.savefig('visualize/{}_semi_moon.png'.format(datetime.datetime.now().strftime('%m%d%H%M')), bbox_inches='tight', dpi=300)
+logger.info(f"✅ Figure saved: visualize/{datetime.datetime.now().strftime('%m%d%H%M')}_semi_moon.png")
+# fig.savefig('imgs/%{asctime}_semi_moon.pdf', bbox_inches='tight', dpi=300)
+# fig.savefig('imgs/%{asctime}_semi_moon.svg', bbox_inches='tight', dpi=300)
