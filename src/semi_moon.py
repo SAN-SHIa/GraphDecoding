@@ -1,4 +1,5 @@
 import os
+import random
 import numpy as np
 from sklearn.metrics import pairwise_distances
 import matplotlib.pyplot as plt
@@ -12,7 +13,7 @@ import torch.optim as optim
 from torch_geometric.data import Data
 
 from sklearn.manifold import TSNE
-from util import Net, GIN, GAT, moon, stationary, reconstruct, dG
+from util import Net, GIN, GAT, GraphSAGE, GraphSAGE_SimpleScale, GraphSAGE_CorrectiveScale, GraphSAGE_InputProject, GraphSAGE_SkipDensity, GraphSAGE_Separated, GAT_DensityEnhanced, moon, stationary, reconstruct,GraphSAGE_AttentionAda, dG
 import logging
 import tqdm
 import datetime
@@ -31,8 +32,17 @@ logging.basicConfig(
 logger = logging.getLogger("semi_moon")
 
 
-np.random.seed(0)
-torch.manual_seed(0)
+def seed_everything(seed=0):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+seed_everything(0)
 
 n = 5000
 m = 500
@@ -49,140 +59,74 @@ A = csr_matrix((np.ones(n * K) / K, (fr, to)))
 edge_index = np.vstack([fr, to])
 edge_index = torch.tensor(edge_index, dtype=torch.long)
 X = torch.tensor([[K, n] for i in range(n)], dtype=torch.float)
-
+eye_n = torch.eye(n)
 logger.info(f"初始化完成: n={n}, m={m}, K={K}, n_train={n_train}")
 
-net = Net()
-optimizer = optim.Adam(net.parameters(), lr=0.001)
-net.train()
-for i in tqdm.tqdm(range(100)):
-    # Note 1: In the original formulation, $g$, i.e., the neural network for the scale function, should be used in reconstruct(K, pr, n, m, fr, to), namely, in the definition of $s$. We factorize $s$ and multiply g after we reconstruct the features. This is mathematically equivalent. We do this to avoid memory overflow due to long backpropagation.
-    # Note 2: We roughly standardize n for stability by (n - 3000) / 3000. This does not affect the representational power of GNNs by merging them into the network parameters.
-    pr = stationary(A)
-    pr = np.maximum(pr, 1e-9)
-    rec_orig = reconstruct(K, pr, n, m, fr, to)
-    rec_orig = torch.FloatTensor(rec_orig)
-    g = net(torch.FloatTensor([(n - 3000) / 3000]))
-    rec = rec_orig * (g ** 0.5)
-    loss = dG(torch.FloatTensor(x)[train_ind], rec[train_ind])
+# Calculate density for fusion methods
+# 1. Stationary Distribution (Global)
+pr = stationary(A)
+pr = np.maximum(pr, 1e-9)
 
-    # print(n, float(g), float(loss))
+# 2. In-Degree (Local Connectivity)
+# Construct NetworkX graph for calculation
+G_nx = nx.from_scipy_sparse_array(A, create_using=nx.DiGraph)
+in_deg = np.array([G_nx.in_degree(i) for i in range(n)])
+in_deg = in_deg / (np.mean(in_deg) + 1e-9) # Normalize to mean ~1
 
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+# 3. Clustering Coefficient (Local Cohesiveness)
+clust = nx.clustering(G_nx)
+clust = np.array([clust[i] for i in range(n)])
+clust = clust / (np.mean(clust) + 1e-9) # Normalize to mean ~1
 
-R, _ = orthogonal_procrustes(x, rec.detach().numpy())
-rec_proposed = rec.detach().numpy() @ R.T
-loss_proposed = float(dG(torch.FloatTensor(x), torch.FloatTensor(rec_proposed)))
+# Combine into 3D density feature: [Stationary, InDegree, Clustering]
+density_np = np.vstack([pr, in_deg, clust]).T
+density = torch.FloatTensor(density_np) # Shape: [N, 3]
+x_tensor = torch.FloatTensor(x)
 
-logger.info(f"✅ Proposed method training completed: dG={loss_proposed:.4f}")
 
-net = GIN(m)
-optimizer = optim.Adam(net.parameters(), lr=0.001)
-net.train()
-for epoch in tqdm.tqdm(range(100)):
-    ind = torch.eye(n)[:, torch.randperm(n)[:m]]
-    X_extended = torch.hstack([X, ind])
-    data = Data(x=X_extended, edge_index=edge_index)
-    rec = net(data)
-    loss = dG(torch.FloatTensor(x)[train_ind], rec[train_ind])
-    # print(float(loss))
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
 
-R, _ = orthogonal_procrustes(x, rec.detach().numpy())
-rec_GIN = rec.detach().numpy() @ R.T
-loss_GIN = float(dG(torch.FloatTensor(x), torch.FloatTensor(rec_GIN)))
+def run_experiment(model_name, model_cls, epochs=100, lr=0.001):
+    seed_everything(0)
+    net = model_cls(m)
+    optimizer = optim.Adam(net.parameters(), lr=lr)
+    net.train()
+    final_rec = None
+    for _ in tqdm.trange(epochs, desc=model_name):
+        idx = torch.randperm(n)[:m]
+        ind = eye_n[:, idx]
+        X_extended = torch.hstack([X, ind])
+        X_with_density = torch.cat([X_extended, density], dim=1)
+        data = Data(x=X_with_density, edge_index=edge_index)
+        rec = net(data)
+        loss = dG(x_tensor[train_ind], rec[train_ind])
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        final_rec = rec
+    rec_np = final_rec.detach().cpu().numpy()
+    R, _ = orthogonal_procrustes(x, rec_np)
+    aligned = rec_np @ R.T
+    score = float(dG(x_tensor, torch.FloatTensor(aligned)))
+    logger.info(f"✅ {model_name} training completed: dG={score:.4f}")
+    return score
 
-logger.info(f"✅ GIN method training completed: dG={loss_GIN:.4f}")
 
-net = GAT(m)
-optimizer = optim.Adam(net.parameters(), lr=0.001)
-net.train()
-for epoch in tqdm.tqdm(range(100)):
-    ind = torch.eye(n)[:, torch.randperm(n)[:m]]
-    X_extended = torch.hstack([X, ind])
-    data = Data(x=X_extended, edge_index=edge_index)
-    rec = net(data)
-    loss = dG(torch.FloatTensor(x)[train_ind], rec[train_ind])
-    # print(float(loss))
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+experiments = [
+    # New Models replacing the complex ones
+    # ("GraphSAGE_InputProject", GraphSAGE_InputProject, 100),
+    # ("GraphSAGE_SkipDensity", GraphSAGE_SkipDensity, 100),
+    # ("GraphSAGE_Separated", GraphSAGE_Separated, 100),
+    # ("GAT_DensityEnhanced", GAT_DensityEnhanced, 100),
+    # previous models
+    ("GraphSAGE_SimpleScale", GraphSAGE_SimpleScale, 100),
+    ("GraphSAGE_AttentionAda", GraphSAGE_AttentionAda, 100),
+    # ("GraphSAGE_AttentionAdaPlus", GraphSAGE_AttentionAdaPlus, 120),
+    # ("GraphSAGE_CorrectiveScale", GraphSAGE_CorrectiveScale, 120),
 
-R, _ = orthogonal_procrustes(x, rec.detach().numpy())
-rec_GAT = rec.detach().numpy() @ R.T
-loss_GAT = float(dG(torch.FloatTensor(x), torch.FloatTensor(rec_GAT)))
-
-logger.info(f"✅ GAT training completed: dG={loss_GAT:.4f}")
-
-ind = torch.eye(n)[:, torch.randperm(n)[:m]]
-X_extended = torch.hstack([X, ind])
-X_embedded = TSNE(n_components=2, random_state=0, init='pca').fit_transform(X_extended.numpy())
-loss_tSNE = float(dG(torch.FloatTensor(x), torch.FloatTensor(X_embedded)))
-logger.info(f"✅ tSNE embedding completed: dG={loss_tSNE:.4f}")
-
-logger.info("🎨 visualization...")
-c = x[:, 0].argsort().argsort()
-fig = plt.figure(figsize=(14, 4))
-ax = fig.add_subplot(2, 3, 1)
-ax.scatter(x[:, 0], x[:, 1], c=c, s=10, rasterized=True)
-ax.set_xticks([])
-ax.set_yticks([])
-ax.set_facecolor('#eeeeee')
-txt = ax.text(0.05, 0.05, 'Ground Truth', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
-txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='#eeeeee')])
-
-visible = plt.imread('./imgs/visible.png')
-visible_ax = fig.add_axes([0.24, 0.77, 0.1, 0.1], anchor='NE', zorder=1)
-visible_ax.imshow(visible)
-visible_ax.axis('off')
-
-G = nx.DiGraph()
-G.add_edges_from([(fr[i], to[i]) for i in range(len(fr))])
-ax = fig.add_subplot(2, 3, 2)
-pos = nx.spring_layout(G, k=0.18, seed=0)
-nx.draw_networkx(G, ax=ax, pos=pos, node_size=0.5, node_color='#005aff', labels={i: '' for i in range(n)}, edge_color='#84919e', width=0.0005, arrowsize=0.1)
-txt = ax.text(0.05, 0.05, 'Input Graph', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
-txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
-ax.set_rasterization_zorder(3)
-
-ax = fig.add_subplot(2, 3, 3)
-ax.scatter(X_embedded[:, 0], X_embedded[:, 1], c=c, s=10, rasterized=True)
-ax.set_xticks([])
-ax.set_yticks([])
-txt = ax.text(0.05, 0.05, 'tSNE(X) $d_G = {:.2f}$'.format(loss_tSNE), color='k', fontsize=14, weight='bold', transform=ax.transAxes)
-txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
-
-ax = fig.add_subplot(2, 3, 4)
-ax.scatter(rec_proposed[:, 0], rec_proposed[:, 1], c=c, s=10, rasterized=True)
-ax.set_xticks([])
-ax.set_yticks([])
-txt = ax.text(0.05, 0.05, 'Proposed $d_G = \\mathbf{' + f'{loss_proposed:.3f}' + '}$', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
-txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
-
-ax = fig.add_subplot(2, 3, 5)
-ax.scatter(rec_GIN[:, 0], rec_GIN[:, 1], c=c, s=10, rasterized=True)
-ax.set_xticks([])
-ax.set_yticks([])
-txt = ax.text(0.05, 0.05, 'GIN $d_G = {:.2f}$'.format(loss_GIN), color='k', fontsize=14, weight='bold', transform=ax.transAxes)
-txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
-
-ax = fig.add_subplot(2, 3, 6)
-ax.scatter(rec_GAT[:, 0], rec_GAT[:, 1], c=c, s=10, rasterized=True)
-ax.set_xticks([])
-ax.set_yticks([])
-txt = ax.text(0.05, 0.05, 'GAT $d_G = {:.2f}$'.format(loss_GAT), color='k', fontsize=14, weight='bold', transform=ax.transAxes)
-txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
-
-fig.subplots_adjust()
-
-if not os.path.exists('visualize'):
-    os.mkdir('visualize')
-
-fig.savefig('visualize/{}_semi_moon.png'.format(datetime.datetime.now().strftime('%m%d%H%M')), bbox_inches='tight', dpi=300)
-logger.info(f"✅ Figure saved: visualize/{datetime.datetime.now().strftime('%m%d%H%M')}_semi_moon.png")
-# fig.savefig('imgs/%{asctime}_semi_moon.pdf', bbox_inches='tight', dpi=300)
-# fig.savefig('imgs/%{asctime}_semi_moon.svg', bbox_inches='tight', dpi=300)
+]
+results = {}
+for name, cls, epochs in experiments:
+    results[name] = run_experiment(name, cls, epochs=epochs)
+logger.info("📊 模型 dG 排行：")
+for name, score in sorted(results.items(), key=lambda kv: kv[1]):
+    logger.info(f"{name}: dG={score:.4f}")
