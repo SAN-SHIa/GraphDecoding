@@ -40,7 +40,6 @@ class Net(nn.Module):
         return self.main(input)
 
 
-
 class MLP(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=128):
         super(MLP, self).__init__()
@@ -57,21 +56,18 @@ class MLP(nn.Module):
 
 class GraphSAGE(torch.nn.Module):
     def __init__(self, m):
-        super(GIN, self).__init__()
+        super(GraphSAGE, self).__init__()
+        self.conv1 = SAGEConv(m + 2, 128)
+        self.conv1.lin_l.weight.data.normal_(0, 1e-3)
+        self.conv1.lin_r.weight.data.normal_(0, 1e-3)
 
-        def init_weights(layer):
-            if type(layer) == nn.Linear:
-                layer.weight.data.normal_(0, 1e-3)
+        self.conv2 = SAGEConv(128, 128)
+        self.conv2.lin_l.weight.data.normal_(0, 1e-3)
+        self.conv2.lin_r.weight.data.normal_(0, 1e-3)
 
-        self.mlp1 = MLP(m + 2, 128)
-        self.conv1 = GINConv(self.mlp1)
-        self.mlp1.main.apply(init_weights)
-        self.mlp2 = MLP(128, 128)
-        self.conv2 = GINConv(self.mlp2)
-        self.mlp2.main.apply(init_weights)
-        self.mlp3 = MLP(128, 2)
-        self.conv3 = GINConv(self.mlp3)
-        self.mlp3.main.apply(init_weights)
+        self.conv3 = SAGEConv(128, 2)
+        self.conv3.lin_l.weight.data.normal_(0, 1e-3)
+        self.conv3.lin_r.weight.data.normal_(0, 1e-3)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
@@ -120,6 +116,8 @@ class GraphSAGE_SimpleScale(torch.nn.Module):
         x = F.dropout(x, p=0.3, training=self.training)
 
         x = self.conv2(x, edge_index)
+        s2 = self.scale2(density)
+        x = x * (1 + s2)
         x = F.leaky_relu(x)
         x = F.dropout(x, p=0.3, training=self.training)
 
@@ -127,7 +125,6 @@ class GraphSAGE_SimpleScale(torch.nn.Module):
         x = F.leaky_relu(x)
         x = self.output_mlp(x)
         return x
-
 
 
 def moon(n):
@@ -143,14 +140,12 @@ def moon(n):
     return x, n
 
 
-
 def stationary(A):
     eig = eigs(A.T)
     ind = eig[0].real.argsort()[-1]
     est = eig[1][:, ind].real
     pr = est / est.sum() * A.shape[0]
     return pr
-
 
 
 def reconstruct(K, pr, n, m, fr, to):
