@@ -12,7 +12,8 @@ import torch
 import torch.optim as optim
 from torch_geometric.data import Data
 
-from util import GraphSAGE_SimpleScale, moon, stationary, dG, seed_everything, setup_logger
+from utils.model import GraphSAGE_SimpleScale, moon, stationary, dG, seed_everything
+from utils.logging import setup_logger
 import tqdm
 import datetime
 

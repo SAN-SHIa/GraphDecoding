@@ -21,8 +21,9 @@ from torch_geometric.data import Data
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from util import GraphSAGE_SimpleScale, moon, stationary, dG, seed_everything, setup_logger
-from datasets_2d import get_dataset_by_name
+from utils.model import GraphSAGE_SimpleScale, moon, stationary, dG, seed_everything
+from utils.logging import setup_logger
+from utils.datasets import get_dataset_by_name
 import tqdm
 import argparse
 import datetime
@@ -404,7 +405,7 @@ def main():
     
     # 准备数据
     if dataset_name.lower() == "moon":
-        from util import moon
+        from utils.model import moon
         x, n = moon(n)
     else:
         x, _ = get_dataset_by_name(dataset_name, n)
