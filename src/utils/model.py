@@ -1,3 +1,5 @@
+import os
+import random
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import eigs
@@ -6,7 +8,18 @@ from scipy.sparse.csgraph import shortest_path
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from torch_geometric.nn import GINConv, GATConv
+from torch_geometric.nn import SAGEConv
+
+
+def seed_everything(seed=0):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 class Net(nn.Module):
@@ -27,6 +40,7 @@ class Net(nn.Module):
         return self.main(input)
 
 
+
 class MLP(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=128):
         super(MLP, self).__init__()
@@ -41,7 +55,7 @@ class MLP(nn.Module):
         return x
 
 
-class GIN(torch.nn.Module):
+class GraphSAGE(torch.nn.Module):
     def __init__(self, m):
         super(GIN, self).__init__()
 
@@ -71,43 +85,49 @@ class GIN(torch.nn.Module):
         return x
 
 
-class GAT(torch.nn.Module):
+class GraphSAGE_SimpleScale(torch.nn.Module):
     def __init__(self, m):
-        super(GAT, self).__init__()
-        self.conv1 = GATConv(m + 2, 16, heads=8)
-        if hasattr(self.conv1, 'lin_src') and self.conv1.lin_src is not None:
-            self.conv1.lin_src.weight.data.normal_(0, 1e-3)
-        if hasattr(self.conv1, 'lin_dst') and self.conv1.lin_dst is not None:
-            self.conv1.lin_dst.weight.data.normal_(0, 1e-3)
-        if hasattr(self.conv1, 'lin') and self.conv1.lin is not None:
-            self.conv1.lin.weight.data.normal_(0, 1e-3)
-            
-        self.conv2 = GATConv(128, 16, heads=8)
-        if hasattr(self.conv2, 'lin_src') and self.conv2.lin_src is not None:
-            self.conv2.lin_src.weight.data.normal_(0, 1e-3)
-        if hasattr(self.conv2, 'lin_dst') and self.conv2.lin_dst is not None:
-            self.conv2.lin_dst.weight.data.normal_(0, 1e-3)
-        if hasattr(self.conv2, 'lin') and self.conv2.lin is not None:
-            self.conv2.lin.weight.data.normal_(0, 1e-3)
-            
-        self.conv3 = GATConv(128, 2, heads=1)
-        if hasattr(self.conv3, 'lin_src') and self.conv3.lin_src is not None:
-            self.conv3.lin_src.weight.data.normal_(0, 1e-3)
-        if hasattr(self.conv3, 'lin_dst') and self.conv3.lin_dst is not None:
-            self.conv3.lin_dst.weight.data.normal_(0, 1e-3)
-        if hasattr(self.conv3, 'lin') and self.conv3.lin is not None:
-            self.conv3.lin.weight.data.normal_(0, 1e-3)
+        super(GraphSAGE_SimpleScale, self).__init__()
+        self.conv1 = SAGEConv(m + 2, 128)
+        self.conv1.lin_l.weight.data.normal_(0, 1e-3)
+        self.conv1.lin_r.weight.data.normal_(0, 1e-3)
+        self.scale1 = nn.Linear(3, 128)
+
+        self.conv2 = SAGEConv(128, 128)
+        self.conv2.lin_l.weight.data.normal_(0, 1e-3)
+        self.conv2.lin_r.weight.data.normal_(0, 1e-3)
+        self.scale2 = nn.Linear(3, 128)
+
+        self.conv3 = SAGEConv(128, 64)
+        self.conv3.lin_l.weight.data.normal_(0, 1e-3)
+        self.conv3.lin_r.weight.data.normal_(0, 1e-3)
+
+        self.output_mlp = nn.Sequential(
+            nn.Linear(64, 32),
+            nn.LeakyReLU(),
+            nn.Linear(32, 2)
+        )
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
-        x = self.conv1(x, edge_index)
+        features = x[:, :-3]
+        density = x[:, -3:]
+
+        x = self.conv1(features, edge_index)
+        s1 = self.scale1(density)
+        x = x * (1 + s1)
         x = F.leaky_relu(x)
-        x = F.dropout(x, training=self.training)
+        x = F.dropout(x, p=0.3, training=self.training)
+
         x = self.conv2(x, edge_index)
         x = F.leaky_relu(x)
-        x = F.dropout(x, training=self.training)
+        x = F.dropout(x, p=0.3, training=self.training)
+
         x = self.conv3(x, edge_index)
+        x = F.leaky_relu(x)
+        x = self.output_mlp(x)
         return x
+
 
 
 def moon(n):
@@ -123,12 +143,14 @@ def moon(n):
     return x, n
 
 
+
 def stationary(A):
     eig = eigs(A.T)
     ind = eig[0].real.argsort()[-1]
     est = eig[1][:, ind].real
     pr = est / est.sum() * A.shape[0]
     return pr
+
 
 
 def reconstruct(K, pr, n, m, fr, to):
@@ -148,28 +170,6 @@ def reconstruct(K, pr, n, m, fr, to):
     w, v = np.linalg.eigh(Ker)
     rec_unnormalized = v[:, -2:] @ np.diag(w[-2:])
     rec_orig = np.zeros((n, 2))
-    rec_orig[selected] = rec_unnormalized
-    rec_orig[unselected] = rec_unnormalized[spd[:, unselected].argmin(0)]
-    return rec_orig
-
-
-def reconstruct_full(dim, deg, pr, n, m, fr, to):
-    selected = np.random.choice(np.arange(n), m, replace=False)
-    unselected = np.array(list(set(np.arange(n)) - set(selected)))
-    s = (deg / (pr * n * n)) ** 0.25
-    W = csr_matrix(([s[x] for x in fr], (fr, to)))
-    spd = shortest_path(W, indices=selected)
-    pos_inf = (spd == np.inf)
-    spd[pos_inf] = 0
-    spd[pos_inf] = spd.max()
-    selected_spd = spd[:, selected]
-    sspd = (selected_spd + selected_spd.T) / 2
-    sspd = sspd ** 2
-    H = np.eye(m) - np.ones(m) / n
-    Ker = - H @ sspd @ H / 2
-    w, v = np.linalg.eigh(Ker)
-    rec_unnormalized = v[:, -dim:] @ np.diag(w[-dim:])
-    rec_orig = np.zeros((n, dim))
     rec_orig[selected] = rec_unnormalized
     rec_orig[unselected] = rec_unnormalized[spd[:, unselected].argmin(0)]
     return rec_orig
