@@ -45,7 +45,13 @@ $ wget https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.dat
 Reproduce the results by the following commands.
 
 ```
-$ python semi_moon.py
+$ python src/semi_moon.py
+```
+
+`semi_moon.py` now reads task settings from `configs/semi_moon.yaml`. You can also specify a custom config file:
+
+```
+$ python src/semi_moon.py --config configs/semi_moon.yaml
 ```
 
 The results are saved in `imgs` directiory.

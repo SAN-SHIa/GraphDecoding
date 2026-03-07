@@ -1,0 +1,22 @@
+seed: 0
+
+data:
+  n: 5000
+  train_ratio: 0.7
+
+graph:
+  knn:
+    divisor: 10
+  eball:
+    epsilon_percentile: 5
+    scaling_factor: 2.7
+
+training:
+  m: 500
+  epochs: 100
+  lr: 0.002
+
+visualization:
+  max_edges_to_draw: 2000
+  output_dir: visualize
+  dpi: 300

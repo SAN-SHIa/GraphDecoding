@@ -1,0 +1,10 @@
+2026-03-07 10:54:00,560 - INFO - 🚀 Running on dataset: moon
+2026-03-07 10:54:01,137 - INFO - Using scaling factor 2.7: epsilon=0.659018
+2026-03-07 10:54:01,407 - INFO - 🌟 E-ball Graph: Nodes=5000, Edges=5027984, Avg Degree=1005.5968
+2026-03-07 10:54:02,970 - INFO - 🌟 KNN Graph: Nodes=5000, Edges=430000, Avg Degree=86.0000
+2026-03-07 10:54:18,469 - INFO - 🔥 start eball training...
+2026-03-07 11:03:34,101 - INFO - ✅ GraphSAGE_SimpleScale_EBALL training completed: dG=0.0632
+2026-03-07 11:03:34,104 - INFO - 🔥 start knn training...
+2026-03-07 11:04:35,345 - INFO - ✅ GraphSAGE_SimpleScale_KNN training completed: dG=0.6214
+2026-03-07 11:04:35,349 - INFO - 🎨 visualization...
+2026-03-07 11:04:44,014 - INFO - 📂 Figure saved: visualize/03071104_moon.png

@@ -1,4 +1,5 @@
 import os
+import argparse
 import numpy as np
 from sklearn.metrics import pairwise_distances
 import matplotlib.pyplot as plt
@@ -14,9 +15,33 @@ from torch_geometric.data import Data
 from util import GraphSAGE_SimpleScale, moon, stationary, dG, seed_everything, setup_logger
 import tqdm
 import datetime
+import yaml
 
 logger = setup_logger("semi_moon")
-seed_everything(0)
+
+
+DEFAULT_CONFIG_PATH = os.path.join("configs", "semi_moon.yaml")
+
+
+def load_config(config_path):
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    if not isinstance(config, dict):
+        raise ValueError(f"Invalid config format in {config_path}: expected a mapping.")
+
+    required_sections = ["data", "graph", "training", "visualization"]
+    for section in required_sections:
+        if section not in config:
+            raise ValueError(f"Missing required section '{section}' in {config_path}.")
+
+    return config
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run semi_moon experiment with external config.")
+    parser.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="Path to YAML config file")
+    return parser.parse_args()
 
 def build_knn_graph(D, K):
     """Construct KNN graph"""
@@ -95,7 +120,7 @@ def compute_symmetric_graph_features(A, n):
     
     return in_deg, clust
 
-def visualize_results(x, A_eball, viz_results, n):
+def visualize_results(x, A_eball, viz_results, n, config):
     logger.info("🎨 visualization...")
     
     # Extract results safely
@@ -129,8 +154,9 @@ def visualize_results(x, A_eball, viz_results, n):
     pos = {i: x[i] for i in range(n)}
     nx.draw_networkx_nodes(G, pos, ax=ax, node_size=0.5, node_color='#005aff')
     
-    if G.number_of_edges() > 2000:
-        edges_to_draw = list(G.edges())[:2000]
+    max_edges_to_draw = int(config["visualization"]["max_edges_to_draw"])
+    if G.number_of_edges() > max_edges_to_draw:
+        edges_to_draw = list(G.edges())[:max_edges_to_draw]
         nx.draw_networkx_edges(G, pos, ax=ax, edgelist=edges_to_draw, edge_color='#84919e', width=0.0005, arrowsize=0.1)
     else:
         nx.draw_networkx_edges(G, pos, ax=ax, edge_color='#84919e', width=0.0005, arrowsize=0.1)
@@ -160,24 +186,24 @@ def visualize_results(x, A_eball, viz_results, n):
 
     fig.subplots_adjust()
 
-    if not os.path.exists('visualize'):
-        os.mkdir('visualize')
+    output_dir = config["visualization"]["output_dir"]
+    os.makedirs(output_dir, exist_ok=True)
 
-    save_path = 'visualize/{}_semi_moon.png'.format(datetime.datetime.now().strftime('%m%d%H%M'))
-    fig.savefig(save_path, bbox_inches='tight', dpi=300)
+    save_path = os.path.join(output_dir, '{}_semi_moon.png'.format(datetime.datetime.now().strftime('%m%d%H%M')))
+    fig.savefig(save_path, bbox_inches='tight', dpi=int(config["visualization"]["dpi"]))
     logger.info(f"📂 Figure saved: {save_path}")
 
-def prepare_data(n):
+def prepare_data(n, train_ratio):
     """Prepare moon dataset and distance matrix."""
     x, n = moon(n)
-    n_train = int(n * 0.7)
+    n_train = int(n * train_ratio)
     train_ind = torch.randperm(n)[:n_train]
     D = pairwise_distances(x)
     return x, train_ind, D
 
-def prepare_knn_features(D, n):
+def prepare_knn_features(D, n, knn_divisor):
     """Build KNN graph and compute its density features."""
-    K = int(np.sqrt(n) * np.log2(n) / 10)
+    K = int(np.sqrt(n) * np.log2(n) / knn_divisor)
     A_knn, edge_index_knn = build_knn_graph(D, K)
     edge_index_knn = torch.tensor(edge_index_knn, dtype=torch.long)
     
@@ -198,12 +224,11 @@ def prepare_knn_features(D, n):
     density_np_knn = np.vstack([pr_knn, in_deg_knn, clust_knn]).T
     density_knn = torch.FloatTensor(density_np_knn)
     
-    return A_knn, edge_index_knn, density_knn
+    return A_knn, edge_index_knn, density_knn, K
 
-def prepare_eball_features(D, n):
+def prepare_eball_features(D, n, epsilon_percentile, scaling_factor):
     """Build E-ball graph and compute its density features."""
-    base_epsilon = np.percentile(D[D > 0], 5)
-    scaling_factor = 2.7
+    base_epsilon = np.percentile(D[D > 0], epsilon_percentile)
     epsilon = base_epsilon * scaling_factor
     logger.info(f"Using scaling factor={scaling_factor}, percen epsilon={epsilon:.6f}")
     
@@ -223,19 +248,17 @@ def prepare_eball_features(D, n):
     
     return A_eball, edge_index_eball, density_eball
 
-def run_training(n, m, x, train_ind, edge_index, density, tag):
+def run_training(n, m, x, train_ind, edge_index, density, tag, feature_k, epochs, lr):
     """Run GraphSAGE training and return aligned reconstruction and score."""
-    K = int(np.sqrt(n) * np.log2(n) / 10)
-    X = torch.tensor([[K, n] for i in range(n)], dtype=torch.float)
+    X = torch.tensor([[feature_k, n] for i in range(n)], dtype=torch.float)
     eye_n = torch.eye(n)
     x_tensor = torch.FloatTensor(x)
     
     name = "GraphSAGE_SimpleScale"
-    epochs = 100
     
     seed_everything(0)
     net = GraphSAGE_SimpleScale(m)
-    optimizer = optim.Adam(net.parameters(), lr=0.002)
+    optimizer = optim.Adam(net.parameters(), lr=lr)
     net.train()
     final_rec = None
     
@@ -262,21 +285,34 @@ def run_training(n, m, x, train_ind, edge_index, density, tag):
 
 def main():
     """Main execution flow."""
-    n = 5000
-    m = 500
-    x, train_ind, D = prepare_data(n)
+    args = parse_args()
+    config = load_config(args.config)
+
+    seed = int(config.get("seed", 0))
+    seed_everything(seed)
+
+    n = int(config["data"]["n"])
+    train_ratio = float(config["data"]["train_ratio"])
+    m = int(config["training"]["m"])
+    epochs = int(config["training"]["epochs"])
+    lr = float(config["training"]["lr"])
+    knn_divisor = float(config["graph"]["knn"]["divisor"])
+    epsilon_percentile = float(config["graph"]["eball"]["epsilon_percentile"])
+    scaling_factor = float(config["graph"]["eball"]["scaling_factor"])
+
+    x, train_ind, D = prepare_data(n, train_ratio)
     
-    A_eball, edge_index_eball, density_eball = prepare_eball_features(D, n)
-    A_knn, edge_index_knn, density_knn = prepare_knn_features(D, n)
+    A_eball, edge_index_eball, density_eball = prepare_eball_features(D, n, epsilon_percentile, scaling_factor)
+    A_knn, edge_index_knn, density_knn, feature_k = prepare_knn_features(D, n, knn_divisor)
     
     viz_results = {}
     
-    aligned_knn, score_knn = run_training(n, m, x, train_ind, edge_index_knn, density_knn, "KNN")
+    aligned_knn, score_knn = run_training(n, m, x, train_ind, edge_index_knn, density_knn, "KNN", feature_k, epochs, lr)
     viz_results["GraphSAGE_SimpleScale_KNN"] = (aligned_knn, score_knn)
-    aligned_eball, score_eball = run_training(n, m, x, train_ind, edge_index_eball, density_eball, "EBALL")
+    aligned_eball, score_eball = run_training(n, m, x, train_ind, edge_index_eball, density_eball, "EBALL", feature_k, epochs, lr)
     viz_results["GraphSAGE_SimpleScale_EBALL"] = (aligned_eball, score_eball)
     
-    visualize_results(x, A_eball, viz_results, n)
+    visualize_results(x, A_eball, viz_results, n, config)
 
 if __name__ == "__main__":
     main()
