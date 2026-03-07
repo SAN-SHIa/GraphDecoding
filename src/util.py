@@ -107,9 +107,16 @@ class GraphSAGE_SimpleScale(torch.nn.Module):
         self.conv2.lin_r.weight.data.normal_(0, 1e-3)
         self.scale2 = nn.Linear(3, 128)
 
-        self.conv3 = SAGEConv(128, 2)
+        self.conv3 = SAGEConv(128, 64)
         self.conv3.lin_l.weight.data.normal_(0, 1e-3)
         self.conv3.lin_r.weight.data.normal_(0, 1e-3)
+        
+        # 增加输出MLP层以增强表达能力
+        self.output_mlp = nn.Sequential(
+            nn.Linear(64, 32),
+            nn.LeakyReLU(),
+            nn.Linear(32, 2)
+        )
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
@@ -120,15 +127,17 @@ class GraphSAGE_SimpleScale(torch.nn.Module):
         s1 = self.scale1(density)
         x = x * (1 + s1)
         x = F.leaky_relu(x)
-        x = F.dropout(x, training=self.training)
+        x = F.dropout(x, p=0.3, training=self.training)
         
         x = self.conv2(x, edge_index)
         s2 = self.scale2(density)
         x = x * (1 + s2)
         x = F.leaky_relu(x)
-        x = F.dropout(x, training=self.training)
+        x = F.dropout(x, p=0.3, training=self.training)
         
         x = self.conv3(x, edge_index)
+        x = F.leaky_relu(x)
+        x = self.output_mlp(x)
         return x
 
 def moon(n):

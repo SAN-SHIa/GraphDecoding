@@ -202,10 +202,10 @@ def prepare_knn_features(D, n):
 
 def prepare_eball_features(D, n):
     """Build E-ball graph and compute its density features."""
-    base_epsilon = np.percentile(D[D > 0], 2.0)
+    base_epsilon = np.percentile(D[D > 0], 5)
     scaling_factor = 2.7
     epsilon = base_epsilon * scaling_factor
-    logger.info(f"Using scaling factor {scaling_factor}: epsilon={epsilon:.6f}")
+    logger.info(f"Using scaling factor={scaling_factor}, percen epsilon={epsilon:.6f}")
     
     A_eball, edge_index_eball = build_eball_graph(D, epsilon)
     edge_index_eball = torch.tensor(edge_index_eball, dtype=torch.long)
@@ -235,7 +235,7 @@ def run_training(n, m, x, train_ind, edge_index, density, tag):
     
     seed_everything(0)
     net = GraphSAGE_SimpleScale(m)
-    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    optimizer = optim.Adam(net.parameters(), lr=0.002)
     net.train()
     final_rec = None
     
