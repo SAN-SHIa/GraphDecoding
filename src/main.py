@@ -94,17 +94,20 @@ def build_eball_graph(D, epsilon):
 
 def calculate_average_degree(A):
     """Calculate the average degree of each node in the graph"""
-    # Create binary matrix, only care about connection existence
+    # Use binary connectivity and treat graph as undirected:
+    # if i->j or j->i exists, count i-j as one undirected edge.
     A_binary = A.copy()
     A_binary.data[:] = 1
-    
-    # Remove self-loops
-    A_binary.setdiag(0)
-    A_binary.eliminate_zeros()
-    
-    # Calculate degree (number of neighbors) for each node
-    degrees = np.array(A_binary.sum(axis=0)).flatten()
-    
+    A_undirected = (A_binary + A_binary.T)
+    A_undirected.data[:] = 1
+
+    # Remove self-loops before degree calculation.
+    A_undirected.setdiag(0)
+    A_undirected.eliminate_zeros()
+
+    # Degree is the number of unique neighbors in the undirected graph.
+    degrees = np.array(A_undirected.sum(axis=1)).flatten()
+
     # Return average degree
     return np.mean(degrees) if len(degrees) > 0 else 0
 
