@@ -18,7 +18,7 @@ from utils.datasets import get_dataset_by_name
 from utils.visualization import visualize_results
 import tqdm
 
-logger = setup_logger("semi_moon")
+logger = None
 
 DEFAULT_CONFIG = {
     "task": {
@@ -30,7 +30,8 @@ DEFAULT_CONFIG = {
     "graph": {
         "knn_k_divisor": 10.0,
         "eball_percentile": 5.0,
-        "eball_scaling_factor": 2.7
+        "eball_scaling_factor": 2.7,
+        "K": 101
     },
     "training": {
         "epochs": 100,
@@ -161,6 +162,8 @@ def prepare_knn_features(D, n, graph_cfg):
     """Build KNN graph and compute its density features."""
     knn_k_divisor = float(graph_cfg.get("knn_k_divisor", 10.0))
     K = int(np.sqrt(n) * np.log2(n) / knn_k_divisor)
+    K = int(graph_cfg.get("K", K))
+
     K = max(1, K)
     A_knn, edge_index_knn = build_knn_graph(D, K)
     edge_index_knn = torch.tensor(edge_index_knn, dtype=torch.long)
@@ -208,12 +211,14 @@ def prepare_eball_features(D, n, graph_cfg):
     
     return A_eball, edge_index_eball, density_eball
 
-def run_training(n, m, x, train_ind, edge_index, density, tag, training_cfg, graph_cfg):
+def run_training(n, m, x, train_ind, edge_index, density, A, tag, training_cfg, graph_cfg):
     """Run GraphSAGE training and return aligned reconstruction and score."""
-    knn_k_divisor = float(graph_cfg.get("knn_k_divisor", 10.0))
-    K = int(np.sqrt(n) * np.log2(n) / knn_k_divisor)
-    K = max(1, K)
-    X = torch.tensor([[K, n] for i in range(n)], dtype=torch.float)
+
+    avg_degree = int(calculate_average_degree(A))
+
+    logger.info(f"🌟 Avg Degree={avg_degree}")
+
+    X = torch.tensor([[avg_degree, n] for i in range(n)], dtype=torch.float)
     eye_n = torch.eye(n)
     x_tensor = torch.FloatTensor(x)
     
@@ -272,6 +277,9 @@ def main():
     dataset_name = args.dataset if args.dataset is not None else task_cfg.get("dataset", "moon")
     train_ratio = float(task_cfg.get("train_ratio", 0.7))
 
+    global logger
+    logger = setup_logger("semi_moon", dataset_name=dataset_name)
+
     seed = int(runtime_cfg.get("seed", 0))
     seed_everything(seed)
     
@@ -285,14 +293,16 @@ def main():
     
     viz_results = {}
     
-    logger.info("🔥 start knn training...")
-    aligned_knn, score_knn = run_training(n, m, x, train_ind, edge_index_knn, density_knn, "KNN", training_cfg, graph_cfg)
-    viz_results["GraphSAGE_SimpleScale_KNN"] = (aligned_knn, score_knn)
-    
     logger.info("🔥 start eball training...")
-    aligned_eball, score_eball = run_training(n, m, x, train_ind, edge_index_eball, density_eball, "EBALL", training_cfg, graph_cfg)
+    aligned_eball, score_eball = run_training(n, m, x, train_ind, edge_index_eball, density_eball, A_eball, "EBALL", training_cfg, graph_cfg)
     viz_results["GraphSAGE_SimpleScale_EBALL"] = (aligned_eball, score_eball)
     
+
+    logger.info("🔥 start knn training...")
+    aligned_knn, score_knn = run_training(n, m, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)
+    viz_results["GraphSAGE_SimpleScale_KNN"] = (aligned_knn, score_knn)
+    
+
     visualize_results(logger, x, A_eball, viz_results, n, dataset_name, viz_cfg)
 
 if __name__ == "__main__":

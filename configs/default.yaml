@@ -8,6 +8,7 @@ graph:
   knn_k_divisor: 10.0
   eball_percentile: 5.0
   eball_scaling_factor: 2.7
+  K: 86
 
 training:
   epochs: 100
