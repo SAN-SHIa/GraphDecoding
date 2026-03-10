@@ -3,9 +3,9 @@ import logging
 import datetime
 
 
-def setup_logger(name, log_dir='logs'):
+def setup_logger(name, dataset_name='moon', log_dir='logs'):
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, '{}_{}.log'.format(datetime.datetime.now().strftime('%m%d%H%M'), name))
+    log_file = os.path.join(log_dir, '{}_{}.log'.format(datetime.datetime.now().strftime('%m%d%H%M'), dataset_name))
 
     logging.basicConfig(
         level=logging.INFO,
