@@ -25,7 +25,6 @@ DEFAULT_CONFIG = {
     "task": {
         "dataset": "moon",
         "n": 5000,
-        "m": 500,
         "train_ratio": 0.7
     },
     "graph": {
@@ -146,6 +145,10 @@ def compute_symmetric_graph_features(A, n):
     
     return in_deg, clust
 
+def z_score_normalize(arr):
+    """Z-score normalization for features to make neural network training stable."""
+    return (arr - np.mean(arr)) / (np.std(arr) + 1e-9)
+
 def prepare_data(n, dataset_name="moon", train_ratio=0.7):
     """Prepare dataset and distance matrix."""
     if dataset_name.lower() == "moon":
@@ -174,6 +177,7 @@ def prepare_knn_features(D, n, graph_cfg):
     
     pr_knn = stationary(A_knn)
     pr_knn = np.maximum(pr_knn, 1e-9)
+    pr_knn = np.clip(pr_knn, a_min=None, a_max=5.0)
 
     G_nx_knn = nx.from_scipy_sparse_array(A_knn, create_using=nx.DiGraph)
     in_deg_knn = np.array([G_nx_knn.in_degree(i) for i in range(n)])
@@ -183,7 +187,12 @@ def prepare_knn_features(D, n, graph_cfg):
     clust_knn = np.array([clust_knn[i] for i in range(n)])
     clust_knn = clust_knn / (np.mean(clust_knn) + 1e-9)
 
-    density_np_knn = np.vstack([pr_knn, in_deg_knn, clust_knn]).T
+    # Normalize features
+    pr_norm = z_score_normalize(pr_knn)
+    in_deg_norm = z_score_normalize(in_deg_knn)
+    clust_norm = z_score_normalize(clust_knn)
+
+    density_np_knn = np.vstack([pr_norm, in_deg_norm, clust_norm]).T
     density_knn = torch.FloatTensor(density_np_knn)
     
     return A_knn, edge_index_knn, density_knn
@@ -204,10 +213,17 @@ def prepare_eball_features(D, n, graph_cfg):
     
     pr_eball = stationary(A_eball)
     pr_eball = np.maximum(pr_eball, 1e-9)
+    # Clip extreme values to prevent scaling collapse (cap at 5.0, mean is 1.0)
+    pr_eball = np.clip(pr_eball, a_min=None, a_max=5.0)
 
     in_deg_eball, clust_eball = compute_symmetric_graph_features(A_eball, n)
 
-    density_np_eball = np.vstack([pr_eball, in_deg_eball, clust_eball]).T
+    # Normalize features to mean 0, std 1 to stabilize NN scale generation
+    pr_norm = z_score_normalize(pr_eball)
+    in_deg_norm = z_score_normalize(in_deg_eball)
+    clust_norm = z_score_normalize(clust_eball)
+
+    density_np_eball = np.vstack([pr_norm, in_deg_norm, clust_norm]).T
     density_eball = torch.FloatTensor(density_np_eball)
     
     return A_eball, edge_index_eball, density_eball
@@ -438,7 +454,6 @@ def main():
     parser.add_argument("--dataset", type=str, default=None,
                         help="Dataset name: moon, circles, spiral, swissroll2d, scurve2d, clusters, grid, ring, line, wave")
     parser.add_argument("--n", type=int, default=None, help="Number of samples")
-    parser.add_argument("--m", type=int, default=None, help="Landmark size")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -450,7 +465,6 @@ def main():
     viz_cfg = config.get("visualization", {})
     
     n = args.n if args.n is not None else int(task_cfg.get("n", 5000))
-    m = args.m if args.m is not None else int(task_cfg.get("m", 500))
     dataset_name = args.dataset if args.dataset is not None else task_cfg.get("dataset", "moon")
     train_ratio = float(task_cfg.get("train_ratio", 0.7))
 
@@ -459,9 +473,9 @@ def main():
 
     seed = int(runtime_cfg.get("seed", 0))
     seed_everything(seed)
-    
+
     logger.info(f"🚀 Running on dataset: {dataset_name}")
-    logger.info(f"📌 Config: n={n}, m={m}, train_ratio={train_ratio}, seed={seed}")
+    logger.info(f"📌 Config: n={n}, train_ratio={train_ratio}, seed={seed}")
     
     x, train_ind, D, n = prepare_data(n, dataset_name, train_ratio)
     
@@ -480,7 +494,7 @@ def main():
     logger.info(f"✅ Scale visualizations saved to: {scale_output_dir}")
 
     # logger.info("🔥 start knn training...")
-    # aligned_knn, score_knn = run_training(n, m, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)
+    # aligned_knn, score_knn, s1_knn, s2_knn = run_training(n, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)
     # viz_results["GraphSAGE_SimpleScale_KNN"] = (aligned_knn, score_knn)
     
 
