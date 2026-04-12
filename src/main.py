@@ -7,6 +7,7 @@ from scipy.linalg import orthogonal_procrustes
 import argparse
 import copy
 import yaml
+import matplotlib.pyplot as plt
 
 import torch
 import torch.optim as optim
@@ -211,7 +212,7 @@ def prepare_eball_features(D, n, graph_cfg):
     
     return A_eball, edge_index_eball, density_eball
 
-def run_training(n, m, x, train_ind, edge_index, density, A, tag, training_cfg, graph_cfg):
+def run_training(n, x, train_ind, edge_index, density, A, tag, training_cfg, graph_cfg):
     """Run GraphSAGE training and return aligned reconstruction and score."""
 
     avg_degree = int(calculate_average_degree(A))
@@ -219,32 +220,32 @@ def run_training(n, m, x, train_ind, edge_index, density, A, tag, training_cfg, 
     logger.info(f"🌟 Avg Degree={avg_degree}")
 
     X = torch.tensor([[avg_degree, n] for i in range(n)], dtype=torch.float)
-    eye_n = torch.eye(n)
     x_tensor = torch.FloatTensor(x)
-    
+
     name = "GraphSAGE_SimpleScale"
     epochs = int(training_cfg.get("epochs", 100))
     lr = float(training_cfg.get("lr", 0.002))
-    
+
     seed_everything(0)
-    net = GraphSAGE_SimpleScale(m)
+    net = GraphSAGE_SimpleScale()
     optimizer = optim.Adam(net.parameters(), lr=lr)
     net.train()
     final_rec = None
-    
+    final_s1 = None
+    final_s2 = None
+
     for _ in tqdm.trange(epochs, desc=f"{name}_{tag}"):
-        idx = torch.randperm(n)[:m]
-        ind = eye_n[:, idx]
-        X_extended = torch.hstack([X, ind])
-        X_with_density = torch.cat([X_extended, density], dim=1)
+        X_with_density = torch.cat([X, density], dim=1)
         data = Data(x=X_with_density, edge_index=edge_index)
-        rec = net(data)
+        rec, s1, s2 = net(data, return_scales=True)
         loss = dG(x_tensor[train_ind], rec[train_ind])
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         final_rec = rec
-        
+        final_s1 = s1.detach()
+        final_s2 = s2.detach()
+    
     rec_np = final_rec.detach().cpu().numpy()
     R, _ = orthogonal_procrustes(x, rec_np)
     aligned = rec_np @ R.T
@@ -252,7 +253,183 @@ def run_training(n, m, x, train_ind, edge_index, density, A, tag, training_cfg, 
     score = float(dG(x_tensor, torch.FloatTensor(aligned)))
     
     logger.info(f"✅ {name}_{tag} training completed: dG={score:.4f}")
-    return aligned, score
+    return aligned, score, final_s1.numpy(), final_s2.numpy()
+
+def visualize_scale_distribution(s1, s2, output_dir, logger):
+    """Visualize scale factor distribution"""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    n_nodes, n_dims = s1.shape
+    logger.info(f"📊 Scale data dimensions: {n_nodes} nodes × {n_dims} dimensions")
+    
+    s1_mean_per_dim = s1.mean(axis=0)
+    s1_std_per_dim = s1.std(axis=0)
+    s2_mean_per_dim = s2.mean(axis=0)
+    s2_std_per_dim = s2.std(axis=0)
+    
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    
+    ax1 = axes[0, 0]
+    x_dims = np.arange(n_dims)
+    ax1.bar(x_dims, s1_mean_per_dim, yerr=s1_std_per_dim, alpha=0.7, capsize=2, color='steelblue')
+    ax1.axhline(y=0, color='red', linestyle='--', linewidth=1)
+    ax1.set_xlabel('Dimension Index', fontsize=12)
+    ax1.set_ylabel('Mean Value', fontsize=12)
+    ax1.set_title(f'S1: Mean ± Std per Dimension ({n_dims} dims across {n_nodes} nodes)', fontsize=14)
+    ax1.set_xlim(-1, n_dims)
+    
+    ax2 = axes[0, 1]
+    ax2.bar(x_dims, s2_mean_per_dim, yerr=s2_std_per_dim, alpha=0.7, capsize=2, color='coral')
+    ax2.axhline(y=0, color='red', linestyle='--', linewidth=1)
+    ax2.set_xlabel('Dimension Index', fontsize=12)
+    ax2.set_ylabel('Mean Value', fontsize=12)
+    ax2.set_title(f'S2: Mean ± Std per Dimension ({n_dims} dims across {n_nodes} nodes)', fontsize=14)
+    ax2.set_xlim(-1, n_dims)
+    
+    ax3 = axes[1, 0]
+    ax3.hist(s1_mean_per_dim, bins=30, alpha=0.7, color='steelblue', edgecolor='black')
+    ax3.axvline(x=s1_mean_per_dim.mean(), color='red', linestyle='--', linewidth=2, label=f'Overall Mean: {s1_mean_per_dim.mean():.4f}')
+    ax3.set_xlabel('Mean Value', fontsize=12)
+    ax3.set_ylabel('Count', fontsize=12)
+    ax3.set_title('S1: Distribution of Dimension Means', fontsize=14)
+    ax3.legend()
+    
+    ax4 = axes[1, 1]
+    ax4.hist(s2_mean_per_dim, bins=30, alpha=0.7, color='coral', edgecolor='black')
+    ax4.axvline(x=s2_mean_per_dim.mean(), color='red', linestyle='--', linewidth=2, label=f'Overall Mean: {s2_mean_per_dim.mean():.4f}')
+    ax4.set_xlabel('Mean Value', fontsize=12)
+    ax4.set_ylabel('Count', fontsize=12)
+    ax4.set_title('S2: Distribution of Dimension Means', fontsize=14)
+    ax4.legend()
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'scale_dim_distribution.png'), dpi=150, bbox_inches='tight')
+    plt.close()
+    logger.info(f"✅ Saved: {output_dir}/scale_dim_distribution.png")
+    
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    
+    ax1 = axes[0, 0]
+    s1_flat = s1.flatten()
+    ax1.hist(s1_flat, bins=100, alpha=0.7, color='steelblue', edgecolor='none')
+    ax1.axvline(x=s1_flat.mean(), color='red', linestyle='--', linewidth=2, label=f'Mean: {s1_flat.mean():.4f}')
+    ax1.axvline(x=np.median(s1_flat), color='green', linestyle='--', linewidth=2, label=f'Median: {np.median(s1_flat):.4f}')
+    ax1.set_xlabel('Scale Value', fontsize=12)
+    ax1.set_ylabel('Count', fontsize=12)
+    ax1.set_title(f'S1: All Values Distribution ({n_nodes} nodes × {n_dims} dims)', fontsize=14)
+    ax1.legend()
+    
+    ax2 = axes[0, 1]
+    s2_flat = s2.flatten()
+    ax2.hist(s2_flat, bins=100, alpha=0.7, color='coral', edgecolor='none')
+    ax2.axvline(x=s2_flat.mean(), color='red', linestyle='--', linewidth=2, label=f'Mean: {s2_flat.mean():.4f}')
+    ax2.axvline(x=np.median(s2_flat), color='green', linestyle='--', linewidth=2, label=f'Median: {np.median(s2_flat):.4f}')
+    ax2.set_xlabel('Scale Value', fontsize=12)
+    ax2.set_ylabel('Count', fontsize=12)
+    ax2.set_title(f'S2: All Values Distribution ({n_nodes} nodes × {n_dims} dims)', fontsize=14)
+    ax2.legend()
+    
+    ax3 = axes[1, 0]
+    s1_node_mean = s1.mean(axis=1)
+    ax3.hist(s1_node_mean, bins=50, alpha=0.7, color='steelblue', edgecolor='black')
+    ax3.axvline(x=s1_node_mean.mean(), color='red', linestyle='--', linewidth=2, label=f'Mean: {s1_node_mean.mean():.4f}')
+    ax3.set_xlabel('Mean Scale Value per Node', fontsize=12)
+    ax3.set_ylabel('Count', fontsize=12)
+    ax3.set_title('S1: Distribution of Node-wise Means', fontsize=14)
+    ax3.legend()
+    
+    ax4 = axes[1, 1]
+    s2_node_mean = s2.mean(axis=1)
+    ax4.hist(s2_node_mean, bins=50, alpha=0.7, color='coral', edgecolor='black')
+    ax4.axvline(x=s2_node_mean.mean(), color='red', linestyle='--', linewidth=2, label=f'Mean: {s2_node_mean.mean():.4f}')
+    ax4.set_xlabel('Mean Scale Value per Node', fontsize=12)
+    ax4.set_ylabel('Count', fontsize=12)
+    ax4.set_title('S2: Distribution of Node-wise Means', fontsize=14)
+    ax4.legend()
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'scale_value_distribution.png'), dpi=150, bbox_inches='tight')
+    plt.close()
+    logger.info(f"✅ Saved: {output_dir}/scale_value_distribution.png")
+    
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    
+    ax1 = axes[0]
+    im1 = ax1.imshow(s1.T, aspect='auto', cmap='RdBu_r', vmin=-np.abs(s1).max(), vmax=np.abs(s1).max())
+    ax1.set_xlabel('Node Index', fontsize=12)
+    ax1.set_ylabel('Dimension Index', fontsize=12)
+    ax1.set_title('S1 Heatmap: Nodes × Dimensions', fontsize=14)
+    plt.colorbar(im1, ax=ax1, label='Scale Value')
+    
+    ax2 = axes[1]
+    im2 = ax2.imshow(s2.T, aspect='auto', cmap='RdBu_r', vmin=-np.abs(s2).max(), vmax=np.abs(s2).max())
+    ax2.set_xlabel('Node Index', fontsize=12)
+    ax2.set_ylabel('Dimension Index', fontsize=12)
+    ax2.set_title('S2 Heatmap: Nodes × Dimensions', fontsize=14)
+    plt.colorbar(im2, ax=ax2, label='Scale Value')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'scale_heatmap.png'), dpi=150, bbox_inches='tight')
+    plt.close()
+    logger.info(f"✅ Saved: {output_dir}/scale_heatmap.png")
+    
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    
+    ax1 = axes[0]
+    s1_sample = s1[np.random.choice(n_nodes, min(100, n_nodes), replace=False)]
+    for i in range(min(10, n_dims)):
+        ax1.plot(s1_sample[i], alpha=0.3, linewidth=0.5)
+    ax1.plot(s1_sample.mean(axis=0), 'b-', linewidth=2, label='Mean')
+    ax1.axhline(y=0, color='red', linestyle='--', linewidth=1)
+    ax1.set_xlabel('Dimension Index', fontsize=12)
+    ax1.set_ylabel('Scale Value', fontsize=12)
+    ax1.set_title('S1: Sample Node Scale Vectors', fontsize=14)
+    ax1.legend()
+    
+    ax2 = axes[1]
+    s2_sample = s2[np.random.choice(n_nodes, min(100, n_nodes), replace=False)]
+    for i in range(min(10, n_dims)):
+        ax2.plot(s2_sample[i], alpha=0.3, linewidth=0.5)
+    ax2.plot(s2_sample.mean(axis=0), 'r-', linewidth=2, label='Mean')
+    ax2.axhline(y=0, color='red', linestyle='--', linewidth=1)
+    ax2.set_xlabel('Dimension Index', fontsize=12)
+    ax2.set_ylabel('Scale Value', fontsize=12)
+    ax2.set_title('S2: Sample Node Scale Vectors', fontsize=14)
+    ax2.legend()
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'scale_vectors.png'), dpi=150, bbox_inches='tight')
+    plt.close()
+    logger.info(f"✅ Saved: {output_dir}/scale_vectors.png")
+    
+    logger.info("="*60)
+    logger.info("📊 Scale Statistics Summary")
+    logger.info("="*60)
+    logger.info(f"S1 Statistics:")
+    logger.info(f"  - Overall Mean: {s1.mean():.6f}")
+    logger.info(f"  - Overall Std: {s1.std():.6f}")
+    logger.info(f"  - Min: {s1.min():.6f}")
+    logger.info(f"  - Max: {s1.max():.6f}")
+    logger.info(f"  - Dimension Mean Range: [{s1_mean_per_dim.min():.6f}, {s1_mean_per_dim.max():.6f}]")
+    logger.info(f"  - Dimension Std Range: [{s1_std_per_dim.min():.6f}, {s1_std_per_dim.max():.6f}]")
+    
+    logger.info(f"S2 Statistics:")
+    logger.info(f"  - Overall Mean: {s2.mean():.6f}")
+    logger.info(f"  - Overall Std: {s2.std():.6f}")
+    logger.info(f"  - Min: {s2.min():.6f}")
+    logger.info(f"  - Max: {s2.max():.6f}")
+    logger.info(f"  - Dimension Mean Range: [{s2_mean_per_dim.min():.6f}, {s2_mean_per_dim.max():.6f}]")
+    logger.info(f"  - Dimension Std Range: [{s2_std_per_dim.min():.6f}, {s2_std_per_dim.max():.6f}]")
+    
+    logger.info(f"Scale Effect Analysis (x * (1 + s)):")
+    logger.info(f"  - S1: Scale Factor Range [{1+s1.min():.4f}, {1+s1.max():.4f}]")
+    logger.info(f"  - S2: Scale Factor Range [{1+s2.min():.4f}, {1+s2.max():.4f}]")
+    
+    s1_positive_ratio = (s1 > 0).mean() * 100
+    s2_positive_ratio = (s2 > 0).mean() * 100
+    logger.info(f"Positive Ratio (Scale Up):")
+    logger.info(f"  - S1: {s1_positive_ratio:.2f}%")
+    logger.info(f"  - S2: {s2_positive_ratio:.2f}%")
 
 def main():
     """Main execution flow."""
@@ -289,18 +466,22 @@ def main():
     x, train_ind, D, n = prepare_data(n, dataset_name, train_ratio)
     
     A_eball, edge_index_eball, density_eball = prepare_eball_features(D, n, graph_cfg)
-    A_knn, edge_index_knn, density_knn = prepare_knn_features(D, n, graph_cfg)
+    # A_knn, edge_index_knn, density_knn = prepare_knn_features(D, n, graph_cfg)
     
     viz_results = {}
     
     logger.info("🔥 start eball training...")
-    aligned_eball, score_eball = run_training(n, m, x, train_ind, edge_index_eball, density_eball, A_eball, "EBALL", training_cfg, graph_cfg)
+    aligned_eball, score_eball, s1_eball, s2_eball = run_training(n, x, train_ind, edge_index_eball, density_eball, A_eball, "EBALL", training_cfg, graph_cfg)
     viz_results["GraphSAGE_SimpleScale_EBALL"] = (aligned_eball, score_eball)
     
+    scale_output_dir = os.path.join("outputs", dataset_name, "scale_analysis")
+    logger.info(f"📊 Generating scale visualizations...")
+    visualize_scale_distribution(s1_eball, s2_eball, scale_output_dir, logger)
+    logger.info(f"✅ Scale visualizations saved to: {scale_output_dir}")
 
-    logger.info("🔥 start knn training...")
-    aligned_knn, score_knn = run_training(n, m, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)
-    viz_results["GraphSAGE_SimpleScale_KNN"] = (aligned_knn, score_knn)
+    # logger.info("🔥 start knn training...")
+    # aligned_knn, score_knn = run_training(n, m, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)
+    # viz_results["GraphSAGE_SimpleScale_KNN"] = (aligned_knn, score_knn)
     
 
     visualize_results(logger, x, A_eball, viz_results, n, dataset_name, viz_cfg)
