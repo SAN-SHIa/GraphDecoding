@@ -179,13 +179,9 @@ def prepare_knn_features(D, n, graph_cfg):
     pr_knn = np.maximum(pr_knn, 1e-9)
     pr_knn = np.clip(pr_knn, a_min=None, a_max=5.0)
 
-    G_nx_knn = nx.from_scipy_sparse_array(A_knn, create_using=nx.DiGraph)
-    in_deg_knn = np.array([G_nx_knn.in_degree(i) for i in range(n)])
-    in_deg_knn = in_deg_knn / (np.mean(in_deg_knn) + 1e-9)
-
-    clust_knn = nx.clustering(G_nx_knn)
-    clust_knn = np.array([clust_knn[i] for i in range(n)])
-    clust_knn = clust_knn / (np.mean(clust_knn) + 1e-9)
+    # Symmetrize A_knn to use the fast matrix operation
+    A_knn_sym = A_knn + A_knn.T
+    in_deg_knn, clust_knn = compute_symmetric_graph_features(A_knn_sym, n)
 
     # Normalize features
     pr_norm = z_score_normalize(pr_knn)
@@ -480,7 +476,7 @@ def main():
     x, train_ind, D, n = prepare_data(n, dataset_name, train_ratio)
     
     A_eball, edge_index_eball, density_eball = prepare_eball_features(D, n, graph_cfg)
-    # A_knn, edge_index_knn, density_knn = prepare_knn_features(D, n, graph_cfg)
+    A_knn, edge_index_knn, density_knn = prepare_knn_features(D, n, graph_cfg)
     
     viz_results = {}
     
@@ -488,14 +484,14 @@ def main():
     aligned_eball, score_eball, s1_eball, s2_eball = run_training(n, x, train_ind, edge_index_eball, density_eball, A_eball, "EBALL", training_cfg, graph_cfg)
     viz_results["GraphSAGE_SimpleScale_EBALL"] = (aligned_eball, score_eball)
     
-    scale_output_dir = os.path.join("outputs", dataset_name, "scale_analysis")
-    logger.info(f"📊 Generating scale visualizations...")
-    visualize_scale_distribution(s1_eball, s2_eball, scale_output_dir, logger)
-    logger.info(f"✅ Scale visualizations saved to: {scale_output_dir}")
+    # scale_output_dir = os.path.join("outputs", dataset_name, "scale_analysis")
+    # logger.info(f"📊 Generating scale visualizations...")
+    # visualize_scale_distribution(s1_eball, s2_eball, scale_output_dir, logger)
+    # logger.info(f"✅ Scale visualizations saved to: {scale_output_dir}")
 
-    # logger.info("🔥 start knn training...")
-    # aligned_knn, score_knn, s1_knn, s2_knn = run_training(n, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)
-    # viz_results["GraphSAGE_SimpleScale_KNN"] = (aligned_knn, score_knn)
+    logger.info("🔥 start knn training...")
+    aligned_knn, score_knn, s1_knn, s2_knn = run_training(n, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)
+    viz_results["GraphSAGE_SimpleScale_KNN"] = (aligned_knn, score_knn)
     
 
     visualize_results(logger, x, A_eball, viz_results, n, dataset_name, viz_cfg)

@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as PathEffects
 import networkx as nx
 
-
 def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", viz_cfg=None):
     logger.info("🎨 visualization...")
 
@@ -44,6 +43,10 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
         xlim = None
         ylim = None
 
+    # Set global font to Times New Roman
+    plt.rcParams['font.family'] = 'serif'
+    plt.rcParams['font.serif'] = ['Times New Roman']
+
     fig = plt.figure(figsize=(14, 8))
 
     ax = fig.add_subplot(2, 2, 1)
@@ -69,24 +72,38 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
     fr_f = fr[keep_edge_mask]
     to_f = to[keep_edge_mask]
     G = nx.DiGraph()
-    G.add_edges_from(zip(fr_f, to_f))
+    
+    # 1. 随机采样 10% 的节点
+    np.random.seed(0)
+    num_nodes_to_keep = max(1, int(n * 0.10))
+    sampled_nodes = set(np.random.choice(n, num_nodes_to_keep, replace=False))
+    
+    # 2. 从全量边中，只保留两端都在被采样节点集合中的边
+    # 不再进行二次抽样，保留子图中 100% 的边，使连线更密集明显
+    edges = list(zip(fr, to))
+    sampled_edges = [(u, v) for u, v in edges if u in sampled_nodes and v in sampled_nodes]
+    
+    # 3. 将采样后的节点和边加入图中
+    G.add_nodes_from(sampled_nodes)
+    G.add_edges_from(sampled_edges)
 
     ax = fig.add_subplot(2, 2, 2)
-    pos = {i: x[i] for i in range(n)}
-    kept_nodes = [int(i) for i in range(n) if keep_mask[i]]
-    pos_kept = {i: pos[i] for i in kept_nodes}
-    nx.draw_networkx_nodes(G, pos_kept, ax=ax, node_size=0.5, node_color='#005aff')
+    
+    # spring_layout: 增加 iterations (迭代次数) 和减少 k (斥力) 让图更乱、更紧凑
+    pos = nx.spring_layout(G, k=0.08, iterations=100, seed=0)
+    
+    # 画图: 线宽(width)调大，边透明度(alpha)调高，让线更明显
+    nx.draw_networkx(G, ax=ax, pos=pos, node_size=2, node_color='#005aff', 
+                     labels={i: '' for i in G.nodes()}, 
+                     edge_color='#84919e', width=0.1, alpha=0.6, arrows=False)
 
-    if G.number_of_edges() > 2000:
-        edges_to_draw = list(G.edges())[:2000]
-        nx.draw_networkx_edges(G, pos, ax=ax, edgelist=edges_to_draw, edge_color='#84919e', width=0.0005, arrowsize=0.1)
-    else:
-        nx.draw_networkx_edges(G, pos_kept, ax=ax, edge_color='#84919e', width=0.0005, arrowsize=0.1)
-
-    txt = ax.text(0.05, 0.05, 'Input Graph (Real Pos)', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
+    txt = ax.text(0.05, 0.05, 'Input Graph (10% Nodes)', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
     txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
     ax.set_rasterization_zorder(3)
-    ax.axis('off')
+    # Ensure this subplot has axes visible just like the others
+    ax.set_xticks([])
+    ax.set_yticks([])
+    # Remove ax.axis('off') to keep the bounding box
     if xlim is not None and ylim is not None:
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
