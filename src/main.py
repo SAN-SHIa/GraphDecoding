@@ -271,6 +271,10 @@ def visualize_scale_distribution(s1, s2, output_dir, logger):
     """Visualize scale factor distribution"""
     os.makedirs(output_dir, exist_ok=True)
     
+    # Set global font to Times New Roman
+    plt.rcParams['font.family'] = 'serif'
+    plt.rcParams['font.serif'] = ['Times New Roman']
+    
     n_nodes, n_dims = s1.shape
     logger.info(f"📊 Scale data dimensions: {n_nodes} nodes × {n_dims} dimensions")
     
@@ -484,10 +488,10 @@ def main():
     aligned_eball, score_eball, s1_eball, s2_eball = run_training(n, x, train_ind, edge_index_eball, density_eball, A_eball, "EBALL", training_cfg, graph_cfg)
     viz_results["GraphSAGE_SimpleScale_EBALL"] = (aligned_eball, score_eball)
     
-    # scale_output_dir = os.path.join("outputs", dataset_name, "scale_analysis")
-    # logger.info(f"📊 Generating scale visualizations...")
-    # visualize_scale_distribution(s1_eball, s2_eball, scale_output_dir, logger)
-    # logger.info(f"✅ Scale visualizations saved to: {scale_output_dir}")
+    scale_output_dir = os.path.join("outputs", dataset_name, "scale_analysis")
+    logger.info(f"📊 Generating scale visualizations...")
+    visualize_scale_distribution(s1_eball, s2_eball, scale_output_dir, logger)
+    logger.info(f"✅ Scale visualizations saved to: {scale_output_dir}")
 
     logger.info("🔥 start knn training...")
     aligned_knn, score_knn, s1_knn, s2_knn = run_training(n, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)

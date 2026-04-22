@@ -1,3 +1,5 @@
+import os
+import csv
 import numpy as np
 from sklearn.datasets import (
     make_moons,
@@ -86,6 +88,28 @@ def generate_wave(n=5000, noise=0.1):
     return x, "Wave"
 
 
+def generate_adult(n=5000):
+    """Adult 数据集"""
+    x = []
+    # adult.data 和 datasets.py 的相对路径关系
+    data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'adult.data')
+    with open(data_path) as f:
+        reader = csv.reader(f)
+        for r in reader:
+            if len(r) == 15 and int(r[0]) < 90 and 1000 < int(r[10]) and int(r[10]) < 99999:
+                x.append([int(r[0]), np.log10(int(r[10]))])
+
+    x = np.array(x)
+    mu = np.mean(x, axis=0, keepdims=True)
+    std = np.std(x, axis=0, keepdims=True)
+    x = (x - mu) / std
+    if n is not None and n < len(x):
+        np.random.seed(0)
+        idx = np.random.choice(len(x), n, replace=False)
+        x = x[idx]
+    return x, "Adult"
+
+
 def get_all_datasets(n=5000):
     """获取所有数据集"""
     datasets = [
@@ -99,6 +123,7 @@ def get_all_datasets(n=5000):
         generate_ring(n),
         generate_line(n),
         generate_wave(n),
+        generate_adult(n),
     ]
     return datasets
 
@@ -116,6 +141,7 @@ def get_dataset_by_name(name, n=5000):
         "ring": generate_ring,
         "line": generate_line,
         "wave": generate_wave,
+        "adult": generate_adult,
     }
     func = dataset_map.get(name.lower())
     if func:

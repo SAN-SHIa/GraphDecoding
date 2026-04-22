@@ -73,9 +73,9 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
     to_f = to[keep_edge_mask]
     G = nx.DiGraph()
     
-    # 1. 随机采样 10% 的节点
+    # 1. 随机采样 20% 的节点
     np.random.seed(0)
-    num_nodes_to_keep = max(1, int(n * 0.10))
+    num_nodes_to_keep = max(1, int(n * 0.20))
     sampled_nodes = set(np.random.choice(n, num_nodes_to_keep, replace=False))
     
     # 2. 从全量边中，只保留两端都在被采样节点集合中的边
@@ -90,23 +90,36 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
     ax = fig.add_subplot(2, 2, 2)
     
     # spring_layout: 增加 iterations (迭代次数) 和减少 k (斥力) 让图更乱、更紧凑
-    pos = nx.spring_layout(G, k=0.08, iterations=100, seed=0)
+    pos = nx.spring_layout(G, k=0.18, iterations=50, seed=0)
     
+    # 获取节点的二维坐标并做归一化，让图撑满坐标轴
+    pos_ary = np.array(list(pos.values()))
+    if pos_ary.shape[0] > 0:
+        pos_min = pos_ary.min(axis=0)
+        pos_max = pos_ary.max(axis=0)
+        pos_range = pos_max - pos_min
+        pos_range[pos_range == 0] = 1  # 防止除以 0
+        
+        # 将坐标缩放到 [-1, 1] 区间（spring_layout 默认的区间），或者直接缩放到 xlim/ylim 的大小
+        for node in pos:
+            pos[node] = ((pos[node] - pos_min) / pos_range) * 2 - 1
+
     # 画图: 线宽(width)调大，边透明度(alpha)调高，让线更明显
     nx.draw_networkx(G, ax=ax, pos=pos, node_size=2, node_color='#005aff', 
                      labels={i: '' for i in G.nodes()}, 
                      edge_color='#84919e', width=0.1, alpha=0.6, arrows=False)
 
-    txt = ax.text(0.05, 0.05, 'Input Graph (10% Nodes)', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
+    txt = ax.text(0.05, 0.05, 'Input Graph', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
     txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
     ax.set_rasterization_zorder(3)
     # Ensure this subplot has axes visible just like the others
     ax.set_xticks([])
     ax.set_yticks([])
     # Remove ax.axis('off') to keep the bounding box
-    if xlim is not None and ylim is not None:
-        ax.set_xlim(xlim)
-        ax.set_ylim(ylim)
+    
+    # 强制将这幅图的显示范围锁定在 [-1.1, 1.1] 之间，防止它被缩得太小
+    ax.set_xlim(-1.1, 1.1)
+    ax.set_ylim(-1.1, 1.1)
 
     if rec_simple_eball is not None:
         ax = fig.add_subplot(2, 2, 3)
