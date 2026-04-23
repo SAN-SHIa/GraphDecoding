@@ -1,167 +1,89 @@
-# Graph Neural Networks can Recover the Hidden Features Solely from the Graph Structure (ICML 2023)
+# GraphDecoding - 基于图神经网络的隐藏特征恢复
 
 [![arXiv](https://img.shields.io/badge/arXiv-2301.10956-b31b1b.svg)](https://arxiv.org/abs/2301.10956)
 
-This repository is an improved and modularized implementation inspired by the paper:
-
-**Graph Neural Networks can Recover the Hidden Features Solely from the Graph Structure**  
-Ryoma Sato, ICML 2023  
-Paper: https://arxiv.org/abs/2301.10956
+毕业设计改进仓库，原始论文：[Graph Neural Networks can Recover the Hidden Features Solely from the Graph Structure](https://arxiv.org/abs/2301.10956)  
+Ryoma Sato, ICML 2023
 
 ---
 
-## 🚀 SimpleScale
+## 算法思想
 
-**SimpleScale** is the core model in this repo (`GraphSAGE_SimpleScale`).
+**核心问题**：给定一个图结构（仅包含节点和边的连接信息），能否恢复出节点潜在的隐藏几何特征？
 
-<img src="./imgs/simple_scale.png" alt="SimpleScale" />
+**SimpleScale 方法**：
+1. **输入**：随机/平凡节点特征 + 结构描述符（PageRank、度、聚类系数等）
+2. **架构**：基于 GraphSAGE 的消息传递 + 密度感知缩放（density-aware scaling）
+3. **目标**：从纯图结构中重建隐藏几何/流形
 
-- **Input**: trivial/random node features + structural descriptors (e.g., PageRank, in-degree, clustering coefficient).
-- **Architecture**: GraphSAGE-based message passing with density-aware scaling.
-- **Objective**: reconstruct hidden geometry/manifold from pure graph structure.
-
-In this codebase:
-- `src/main.py` runs the main 2D manifold decoding experiment.
-- `tools/semi_adult.py` runs the Adult dataset decoding experiment.
-- `tools/feature_analysis.py` analyzes and compares structural features.
+![Framework](imgs/framework.PNG)
 
 ---
 
-## 💿 Dependencies
-
-Install all dependencies:
+## 快速启动
 
 ```bash
-pip install -r requirements.txt
-```
+# 安装依赖
+cd GraphDecoding
 
-If PyTorch installation fails due to CUDA/GPU environment issues, install a suitable build from the official website:
-https://pytorch.org/
+uv venv --python 3.12
+uv pip install -r requirements.txt
 
----
+source venvv/bin/activate
 
-## ⚙️ Quick Start
+# 主实验（moon 等合成数据集）
+python src/main.py --dataset moon
 
-> Recommended from repository root. Use `PYTHONPATH=src` so scripts can import `utils` correctly.
-
-### 1) Main experiment (moon and other synthetic datasets)
-
-```bash
-PYTHONPATH=src python src/main.py
-```
-
-Use config file:
-
-```bash
-PYTHONPATH=src python src/main.py --config configs/default.yaml
-```
-
-Override key args from CLI:
-
-```bash
-PYTHONPATH=src python src/main.py --dataset spiral --n 3000 --m 300
-```
-
-### 2) Adult experiment
-
-```bash
-PYTHONPATH=src python tools/semi_adult.py
-```
-
-### 3) Feature analysis tool
-
-Quick mode:
-
-```bash
-PYTHONPATH=src python tools/feature_analysis.py --dataset moon --n 1000 --m 100
-```
-
-Full search mode (slower):
-
-```bash
-PYTHONPATH=src python tools/feature_analysis.py --dataset moon --n 1000 --m 100 --full_search
+# 全量实验
+bash run.sh
 ```
 
 ---
 
-## 🗃️ Dataset Notes
+## 实验结果
 
-- `src/adult.data` is used by `tools/semi_adult.py`.
-- If you want to refresh/download the Adult dataset manually:
+在多种合成数据集上的隐藏维度恢复对比（Eball Avg degree 表示 e-ball 方法达到最优的 K 近邻数）：
 
-```bash
-wget https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data -O src/adult.data
-```
-
----
-
-## 🧪 Configuration
-
-Main experiment reads `configs/default.yaml`:
-
-```yaml
-task:
-  dataset: moon
-  n: 5000
-  m: 500
-  train_ratio: 0.7
-
-graph:
-  knn_k_divisor: 10.0
-  eball_percentile: 5.0
-  eball_scaling_factor: 2.7
-
-training:
-  epochs: 100
-  lr: 0.002
-
-runtime:
-  seed: 0
-
-visualization:
-  keep_percentile: 97.0
-  fallback_keep_percentile: 95.0
-  min_keep_ratio: 0.5
-```
+| 数据集 | KNN Avg degree | e-ball Avg degree | KNN (dG) | e-ball (dG) | 较优方法 |
+|--------|----------------|-------------------|----------|-------------|----------|
+| moon | 1005 | 999 | 0.0864 | 0.0051 | e-ball |
+| circles | 1090 | 1067 | 0.5997 | 0.0735 | e-ball |
+| spiral | 1041 | 1023.8 | 97.2098 | 1.3757 | e-ball |
+| swissroll2d | 753 | 755 | 0.5416 | 0.3908 | e-ball |
+| scurve2d | 781 | 774 | 0.0351 | 0.0562 | KNN |
+| clusters | 882 | 890 | 1.5990 | 6.5253 | KNN |
+| grid | 1502 | 1506 | 0.0623 | 0.0964 | e-ball |
+| ring | 744 | 743 | 0.0110 | 0.0189 | KNN |
+| line | 1195 | 1204 | 0.0878 | 0.0105 | e-ball |
+| wave | 699 | 702 | 11.8006 | 0.3658 | e-ball |
 
 ---
 
-## 📂 Repository Structure
+## 项目结构
 
-```text
-new-version/
-├── configs/
-│   └── default.yaml
+```
+GraphDecoding/
+├── configs/default.yaml      # 配置文件
 ├── src/
-│   ├── main.py
-│   ├── adult.data
-│   └── utils/
-│       ├── model.py
-│       ├── logging.py
-│       ├── datasets.py
-│       ├── visualization.py
-│       └── __init__.py
+│   ├── main.py               # 主实验入口
+│   ├── adult.data            # Adult 数据集
+│   └── utils/                # 工具模块
+│       ├── model.py          # SimpleScale 模型
+│       ├── datasets.py       # 数据集生成
+│       ├── visualization.py  # 可视化
+│       └── logging.py        # 日志
 ├── tools/
-│   ├── semi_adult.py
-│   └── feature_analysis.py
-├── imgs/
-├── logs/
-├── visualize/
+│   ├── semi_adult.py         # Adult 数据集实验
+│   └── feature_analysis.py   # 特征分析
+├── outputs/                   # 实验输出
+├── imgs/                      # 算法框架图
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## 📈 Outputs
-
-- Logs: `logs/*.log`
-- Reconstruction figures: `visualize/*.png`
-- Feature-correlation plots: `visualize/feature_correlation_*.png`
-
----
-
-## 🖋️ Citation
+## 引用
 
 ```bibtex
 @inproceedings{sato2023graph,
@@ -171,9 +93,3 @@ new-version/
   year      = {2023},
 }
 ```
-
----
-
-## License
-
-This project follows the license in `LICENSE`.

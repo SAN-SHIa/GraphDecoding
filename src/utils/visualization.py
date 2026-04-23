@@ -67,47 +67,41 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
         visible_ax.imshow(visible)
         visible_ax.axis('off')
 
+    # 移除之前可能遗留的下采样代码
     fr, to = A_eball.nonzero()
-    keep_edge_mask = keep_mask[fr] & keep_mask[to]
-    fr_f = fr[keep_edge_mask]
-    to_f = to[keep_edge_mask]
-    G = nx.DiGraph()
     
-    # 1. 随机采样 20% 的节点
-    np.random.seed(0)
-    num_nodes_to_keep = max(1, int(n * 0.20))
+    ax = fig.add_subplot(2, 2, 2)
+    
+    G_vis = nx.DiGraph()
+    
+    # 1. 随机采样 10% 的节点以极大加速可视化，不固定种子
+    num_nodes_to_keep = max(1, int(n * 0.10))
     sampled_nodes = set(np.random.choice(n, num_nodes_to_keep, replace=False))
     
     # 2. 从全量边中，只保留两端都在被采样节点集合中的边
-    # 不再进行二次抽样，保留子图中 100% 的边，使连线更密集明显
     edges = list(zip(fr, to))
     sampled_edges = [(u, v) for u, v in edges if u in sampled_nodes and v in sampled_nodes]
     
     # 3. 将采样后的节点和边加入图中
-    G.add_nodes_from(sampled_nodes)
-    G.add_edges_from(sampled_edges)
-
-    ax = fig.add_subplot(2, 2, 2)
+    G_vis.add_nodes_from(sampled_nodes)
+    G_vis.add_edges_from(sampled_edges)
     
-    # spring_layout: 增加 iterations (迭代次数) 和减少 k (斥力) 让图更乱、更紧凑
-    pos = nx.spring_layout(G, k=0.18, iterations=50, seed=0)
+    # 使用 random_layout，且不固定随机种子
+    pos = nx.random_layout(G_vis)
     
-    # 获取节点的二维坐标并做归一化，让图撑满坐标轴
+    # 居中对齐：将坐标缩放到 [-1, 1] 并且去中心化
     pos_ary = np.array(list(pos.values()))
     if pos_ary.shape[0] > 0:
         pos_min = pos_ary.min(axis=0)
         pos_max = pos_ary.max(axis=0)
         pos_range = pos_max - pos_min
         pos_range[pos_range == 0] = 1  # 防止除以 0
-        
-        # 将坐标缩放到 [-1, 1] 区间（spring_layout 默认的区间），或者直接缩放到 xlim/ylim 的大小
         for node in pos:
             pos[node] = ((pos[node] - pos_min) / pos_range) * 2 - 1
 
-    # 画图: 线宽(width)调大，边透明度(alpha)调高，让线更明显
-    nx.draw_networkx(G, ax=ax, pos=pos, node_size=2, node_color='#005aff', 
-                     labels={i: '' for i in G.nodes()}, 
-                     edge_color='#84919e', width=0.1, alpha=0.6, arrows=False)
+    nx.draw_networkx(G_vis, ax=ax, pos=pos, node_size=0.5, node_color='#005aff', 
+                     labels={i: '' for i in sampled_nodes}, 
+                     edge_color='#84919e', width=0.0005, arrowsize=0.1)
 
     txt = ax.text(0.05, 0.05, 'Input Graph', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
     txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
@@ -116,10 +110,6 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
     ax.set_xticks([])
     ax.set_yticks([])
     # Remove ax.axis('off') to keep the bounding box
-    
-    # 强制将这幅图的显示范围锁定在 [-1.1, 1.1] 之间，防止它被缩得太小
-    ax.set_xlim(-1.1, 1.1)
-    ax.set_ylim(-1.1, 1.1)
 
     if rec_simple_eball is not None:
         ax = fig.add_subplot(2, 2, 3)

@@ -454,12 +454,16 @@ def main():
     parser.add_argument("--dataset", type=str, default=None,
                         help="Dataset name: moon, circles, spiral, swissroll2d, scurve2d, clusters, grid, ring, line, wave")
     parser.add_argument("--n", type=int, default=None, help="Number of samples")
+    parser.add_argument("--K", type=int, default=None, help="Parameter K for KNN graph")
     args = parser.parse_args()
 
     config = load_config(args.config)
 
     task_cfg = config.get("task", {})
     graph_cfg = config.get("graph", {})
+    
+    if args.K is not None:
+        graph_cfg["K"] = args.K
     training_cfg = config.get("training", {})
     runtime_cfg = config.get("runtime", {})
     viz_cfg = config.get("visualization", {})
@@ -488,10 +492,10 @@ def main():
     aligned_eball, score_eball, s1_eball, s2_eball = run_training(n, x, train_ind, edge_index_eball, density_eball, A_eball, "EBALL", training_cfg, graph_cfg)
     viz_results["GraphSAGE_SimpleScale_EBALL"] = (aligned_eball, score_eball)
     
-    scale_output_dir = os.path.join("outputs", dataset_name, "scale_analysis")
-    logger.info(f"📊 Generating scale visualizations...")
-    visualize_scale_distribution(s1_eball, s2_eball, scale_output_dir, logger)
-    logger.info(f"✅ Scale visualizations saved to: {scale_output_dir}")
+    # scale_output_dir = os.path.join("outputs", dataset_name, "scale_analysis")
+    # logger.info(f"📊 Generating scale visualizations...")
+    # visualize_scale_distribution(s1_eball, s2_eball, scale_output_dir, logger)
+    # logger.info(f"✅ Scale visualizations saved to: {scale_output_dir}")
 
     logger.info("🔥 start knn training...")
     aligned_knn, score_knn, s1_knn, s2_knn = run_training(n, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)
