@@ -16,7 +16,7 @@ Ryoma Sato, ICML 2023
 2. **架构**：基于 GraphSAGE 的消息传递 + 密度感知缩放（density-aware scaling）
 3. **目标**：从纯图结构中重建隐藏几何/流形
 
-<img src="./imgs/framework.PNG" alt="GNN" />
+<img src="./imgs/framework.png" alt="GNN" />
 ---
 
 ## 快速启动
