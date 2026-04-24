@@ -4,8 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as PathEffects
 import networkx as nx
+from sklearn.metrics import pairwise_distances
 
-def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", viz_cfg=None):
+def visualize_results(logger, x, A_graph, viz_results, n, dataset_name="moon", viz_cfg=None):
     logger.info("🎨 visualization...")
 
     if viz_cfg is None:
@@ -47,9 +48,9 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
     plt.rcParams['font.family'] = 'serif'
     plt.rcParams['font.serif'] = ['Times New Roman']
 
-    fig = plt.figure(figsize=(14, 8))
+    fig = plt.figure(figsize=(20, 4))
 
-    ax = fig.add_subplot(2, 2, 1)
+    ax = fig.add_subplot(1, 4, 1)
     ax.scatter(x[keep_mask, 0], x[keep_mask, 1], c=c[keep_mask], s=10, rasterized=True)
     ax.set_xticks([])
     ax.set_yticks([])
@@ -63,56 +64,29 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
 
     if os.path.exists('./imgs/visible.png'):
         visible = plt.imread('./imgs/visible.png')
-        visible_ax = fig.add_axes([0.24, 0.77, 0.1, 0.1], anchor='NE', zorder=1)
+        visible_ax = fig.add_axes([0.16, 0.77, 0.08, 0.1], anchor='NE', zorder=1)
         visible_ax.imshow(visible)
         visible_ax.axis('off')
 
-    # 移除之前可能遗留的下采样代码
-    fr, to = A_eball.nonzero()
+    G = nx.DiGraph()
     
-    ax = fig.add_subplot(2, 2, 2)
+    # 重新实现 KNN 构建逻辑作为 Input Graph 示例
+    K = int(np.sqrt(n) * np.log2(n) / 10)
+    K = max(1, K)
+    D = pairwise_distances(x)
+    fr_knn = np.arange(n).repeat(K).reshape(-1)
+    to_knn = np.argsort(D, axis=1)[:, 1:K + 1].reshape(-1)
     
-    G_vis = nx.DiGraph()
-    
-    # 1. 随机采样 10% 的节点以极大加速可视化，不固定种子
-    num_nodes_to_keep = max(1, int(n * 0.10))
-    sampled_nodes = set(np.random.choice(n, num_nodes_to_keep, replace=False))
-    
-    # 2. 从全量边中，只保留两端都在被采样节点集合中的边
-    edges = list(zip(fr, to))
-    sampled_edges = [(u, v) for u, v in edges if u in sampled_nodes and v in sampled_nodes]
-    
-    # 3. 将采样后的节点和边加入图中
-    G_vis.add_nodes_from(sampled_nodes)
-    G_vis.add_edges_from(sampled_edges)
-    
-    # 使用 random_layout，且不固定随机种子
-    pos = nx.random_layout(G_vis)
-    
-    # 居中对齐：将坐标缩放到 [-1, 1] 并且去中心化
-    pos_ary = np.array(list(pos.values()))
-    if pos_ary.shape[0] > 0:
-        pos_min = pos_ary.min(axis=0)
-        pos_max = pos_ary.max(axis=0)
-        pos_range = pos_max - pos_min
-        pos_range[pos_range == 0] = 1  # 防止除以 0
-        for node in pos:
-            pos[node] = ((pos[node] - pos_min) / pos_range) * 2 - 1
-
-    nx.draw_networkx(G_vis, ax=ax, pos=pos, node_size=0.5, node_color='#005aff', 
-                     labels={i: '' for i in sampled_nodes}, 
-                     edge_color='#84919e', width=0.0005, arrowsize=0.1)
-
-    txt = ax.text(0.05, 0.05, 'Input Graph', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
+    G.add_edges_from([(fr_knn[i], to_knn[i]) for i in range(len(fr_knn))])
+    ax = fig.add_subplot(1, 4, 2)
+    pos = nx.spring_layout(G, k=0.18, seed=0)
+    nx.draw_networkx(G, ax=ax, pos=pos, node_size=0.5, node_color='#005aff', labels={i: '' for i in range(n)}, edge_color='#84919e', width=0.0005, arrowsize=0.1)
+    txt = ax.text(0.05, 0.05, f'Input Graph', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
     txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
     ax.set_rasterization_zorder(3)
-    # Ensure this subplot has axes visible just like the others
-    ax.set_xticks([])
-    ax.set_yticks([])
-    # Remove ax.axis('off') to keep the bounding box
 
     if rec_simple_eball is not None:
-        ax = fig.add_subplot(2, 2, 3)
+        ax = fig.add_subplot(1, 4, 3)
         ax.scatter(rec_simple_eball[keep_mask, 0], rec_simple_eball[keep_mask, 1], c=c[keep_mask], s=10, rasterized=True)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -123,7 +97,7 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
             ax.set_ylim(ylim)
 
     if rec_simple_knn is not None:
-        ax = fig.add_subplot(2, 2, 4)
+        ax = fig.add_subplot(1, 4, 4)
         ax.scatter(rec_simple_knn[keep_mask, 0], rec_simple_knn[keep_mask, 1], c=c[keep_mask], s=10, rasterized=True)
         ax.set_xticks([])
         ax.set_yticks([])

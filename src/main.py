@@ -7,6 +7,7 @@ from scipy.linalg import orthogonal_procrustes
 import argparse
 import copy
 import yaml
+import csv
 import matplotlib.pyplot as plt
 
 import torch
@@ -169,6 +170,7 @@ def prepare_knn_features(D, n, graph_cfg):
     K = int(graph_cfg.get("K", K))
 
     K = max(1, K)
+    
     A_knn, edge_index_knn = build_knn_graph(D, K)
     edge_index_knn = torch.tensor(edge_index_knn, dtype=torch.long)
     
@@ -501,7 +503,6 @@ def main():
     aligned_knn, score_knn, s1_knn, s2_knn = run_training(n, x, train_ind, edge_index_knn, density_knn, A_knn, "KNN", training_cfg, graph_cfg)
     viz_results["GraphSAGE_SimpleScale_KNN"] = (aligned_knn, score_knn)
     
-
     visualize_results(logger, x, A_eball, viz_results, n, dataset_name, viz_cfg)
 
 if __name__ == "__main__":

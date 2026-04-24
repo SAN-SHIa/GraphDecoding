@@ -1,50 +1,42 @@
-# GraphDecoding - 基于图神经网络的隐藏特征恢复
+# GraphDecoding
 
 [![arXiv](https://img.shields.io/badge/arXiv-2301.10956-b31b1b.svg)](https://arxiv.org/abs/2301.10956)
 
-毕业设计改进仓库，原始论文：[Graph Neural Networks can Recover the Hidden Features Solely from the Graph Structure](https://arxiv.org/abs/2301.10956)  
-Ryoma Sato, ICML 2023
+Extended implementation of [Graph Neural Networks can Recover the Hidden Features Solely from the Graph Structure](https://arxiv.org/abs/2301.10956) (ICML 2023) by Ryoma Sato.
 
 ---
 
-## 算法思想
+## Method
 
-**核心问题**：给定一个图结构（仅包含节点和边的连接信息），能否恢复出节点潜在的隐藏几何特征？
+**Core Problem**: Given a graph structure (nodes + edge connectivity), can we recover the hidden geometric features of nodes?
 
-**SimpleScale 方法**：
-1. **输入**：随机/平凡节点特征 + 结构描述符（PageRank、度、聚类系数等）
-2. **架构**：基于 GraphSAGE 的消息传递 + 密度感知缩放（density-aware scaling）
-3. **目标**：从纯图结构中重建隐藏几何/流形
+**SimpleScale Approach**:
+1. **Input**: Random/trivial node features + structural descriptors (PageRank, degree, clustering coefficient, etc.)
+2. **Architecture**: GraphSAGE-based message passing with density-aware scaling
+3. **Objective**: Reconstruct hidden geometry/manifold from pure graph structure
 
-<img src="./imgs/framework.png" alt="GNN" />
+<img src="./imgs/framework.png" alt="Framework" />
+
 ---
 
-## 快速启动
+## Experiments
+
+### Experiment 1: KNN vs E-ball Comparison
+
+Compare SimpleScale with different neighborhood construction methods (KNN and e-ball).
 
 ```bash
-# 安装依赖
-cd GraphDecoding
+# Single dataset
+python src/main.py --dataset moon --K 900
 
-uv venv --python 3.12
-uv pip install -r requirements.txt
-
-source venvv/bin/activate
-
-# 主实验（moon 等合成数据集）
-python src/main.py --dataset moon
-
-# 全量实验
-bash run.sh
+# Full experiment suite
+bash run_knn_eball.sh
 ```
 
----
+**Results** (lower dG is better):
 
-## 实验结果
-
-在多种合成数据集上的隐藏维度恢复对比（Eball Avg degree 表示 e-ball 方法达到最优的 K 近邻数）：
-
-| 数据集 | KNN Avg degree | e-ball Avg degree | KNN (dG) | e-ball (dG) | 较优方法 |
-|--------|----------------|-------------------|----------|-------------|----------|
+| Dataset | KNN Avg degree | e-ball Avg degree | KNN (dG) | e-ball (dG) | Best |
+|---------|----------------|-------------------|----------|-------------|------|
 | moon | 1005 | 999 | 0.0864 | 0.0051 | e-ball |
 | circles | 1090 | 1067 | 0.5997 | 0.0735 | e-ball |
 | spiral | 1041 | 1023.8 | 97.2098 | 1.3757 | e-ball |
@@ -56,33 +48,54 @@ bash run.sh
 | line | 1195 | 1204 | 0.0878 | 0.0105 | e-ball |
 | wave | 699 | 702 | 11.8006 | 0.3658 | e-ball |
 
+### Experiment 2: GNN Architecture Comparison
+
+Compare different GNN architectures (Proposed, GIN, GAT) for hidden feature recovery.
+
+```bash
+cd gnnrecover
+bash run_gnn.sh
+```
+
 ---
 
-## 项目结构
+## Quick Start
+
+```bash
+cd GraphDecoding
+
+# Setup environment
+uv venv --python 3.12
+uv pip install -r requirements.txt
+source .venv/bin/activate
+
+# Run experiments
+bash run_knn_eball.sh          # KNN vs e-ball comparison
+cd gnnrecover && bash run_gnn.sh  # GNN architecture comparison
+```
+
+---
+
+## Structure
 
 ```
 GraphDecoding/
-├── configs/default.yaml      # 配置文件
+├── configs/default.yaml      # Config file
 ├── src/
-│   ├── main.py               # 主实验入口
-│   ├── adult.data            # Adult 数据集
-│   └── utils/                # 工具模块
-│       ├── model.py          # SimpleScale 模型
-│       ├── datasets.py       # 数据集生成
-│       ├── visualization.py  # 可视化
-│       └── logging.py        # 日志
-├── tools/
-│   ├── semi_adult.py         # Adult 数据集实验
-│   └── feature_analysis.py   # 特征分析
-├── outputs/                   # 实验输出
-├── imgs/                      # 算法框架图
+│   ├── main.py               # SimpleScale (KNN/e-ball) entry point
+│   └── utils/                # Utilities
+├── gnnrecover/
+│   ├── main_all_dataset_gnn.py  # GNN comparison entry point
+│   ├── run_gnn.sh               # GNN experiment runner
+│   └── utils.py
+├── outputs/                   # Experiment outputs
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## 引用
+## Citation
 
 ```bibtex
 @inproceedings{sato2023graph,
