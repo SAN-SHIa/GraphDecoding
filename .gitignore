@@ -10,4 +10,5 @@ env/
 
 logs/
 visualize/
-imgs/
+
+outputs/

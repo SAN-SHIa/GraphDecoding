@@ -4,9 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as PathEffects
 import networkx as nx
+from sklearn.metrics import pairwise_distances
 
-
-def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", viz_cfg=None):
+def visualize_results(logger, x, A_graph, viz_results, n, dataset_name="moon", viz_cfg=None):
     logger.info("🎨 visualization...")
 
     if viz_cfg is None:
@@ -44,9 +44,13 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
         xlim = None
         ylim = None
 
-    fig = plt.figure(figsize=(14, 8))
+    # Set global font to Times New Roman
+    plt.rcParams['font.family'] = 'serif'
+    plt.rcParams['font.serif'] = ['Times New Roman']
 
-    ax = fig.add_subplot(2, 2, 1)
+    fig = plt.figure(figsize=(20, 4))
+
+    ax = fig.add_subplot(1, 4, 1)
     ax.scatter(x[keep_mask, 0], x[keep_mask, 1], c=c[keep_mask], s=10, rasterized=True)
     ax.set_xticks([])
     ax.set_yticks([])
@@ -60,39 +64,29 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
 
     if os.path.exists('./imgs/visible.png'):
         visible = plt.imread('./imgs/visible.png')
-        visible_ax = fig.add_axes([0.24, 0.77, 0.1, 0.1], anchor='NE', zorder=1)
+        visible_ax = fig.add_axes([0.16, 0.77, 0.08, 0.1], anchor='NE', zorder=1)
         visible_ax.imshow(visible)
         visible_ax.axis('off')
 
-    fr, to = A_eball.nonzero()
-    keep_edge_mask = keep_mask[fr] & keep_mask[to]
-    fr_f = fr[keep_edge_mask]
-    to_f = to[keep_edge_mask]
     G = nx.DiGraph()
-    G.add_edges_from(zip(fr_f, to_f))
-
-    ax = fig.add_subplot(2, 2, 2)
-    pos = {i: x[i] for i in range(n)}
-    kept_nodes = [int(i) for i in range(n) if keep_mask[i]]
-    pos_kept = {i: pos[i] for i in kept_nodes}
-    nx.draw_networkx_nodes(G, pos_kept, ax=ax, node_size=0.5, node_color='#005aff')
-
-    if G.number_of_edges() > 2000:
-        edges_to_draw = list(G.edges())[:2000]
-        nx.draw_networkx_edges(G, pos, ax=ax, edgelist=edges_to_draw, edge_color='#84919e', width=0.0005, arrowsize=0.1)
-    else:
-        nx.draw_networkx_edges(G, pos_kept, ax=ax, edge_color='#84919e', width=0.0005, arrowsize=0.1)
-
-    txt = ax.text(0.05, 0.05, 'Input Graph (Real Pos)', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
+    
+    # 重新实现 KNN 构建逻辑作为 Input Graph 示例
+    K = int(np.sqrt(n) * np.log2(n) / 10)
+    K = max(1, K)
+    D = pairwise_distances(x)
+    fr_knn = np.arange(n).repeat(K).reshape(-1)
+    to_knn = np.argsort(D, axis=1)[:, 1:K + 1].reshape(-1)
+    
+    G.add_edges_from([(fr_knn[i], to_knn[i]) for i in range(len(fr_knn))])
+    ax = fig.add_subplot(1, 4, 2)
+    pos = nx.spring_layout(G, k=0.18, seed=0)
+    nx.draw_networkx(G, ax=ax, pos=pos, node_size=0.5, node_color='#005aff', labels={i: '' for i in range(n)}, edge_color='#84919e', width=0.0005, arrowsize=0.1)
+    txt = ax.text(0.05, 0.05, f'Input Graph', color='k', fontsize=14, weight='bold', transform=ax.transAxes)
     txt.set_path_effects([PathEffects.withStroke(linewidth=5, foreground='w')])
     ax.set_rasterization_zorder(3)
-    ax.axis('off')
-    if xlim is not None and ylim is not None:
-        ax.set_xlim(xlim)
-        ax.set_ylim(ylim)
 
     if rec_simple_eball is not None:
-        ax = fig.add_subplot(2, 2, 3)
+        ax = fig.add_subplot(1, 4, 3)
         ax.scatter(rec_simple_eball[keep_mask, 0], rec_simple_eball[keep_mask, 1], c=c[keep_mask], s=10, rasterized=True)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -103,7 +97,7 @@ def visualize_results(logger, x, A_eball, viz_results, n, dataset_name="moon", v
             ax.set_ylim(ylim)
 
     if rec_simple_knn is not None:
-        ax = fig.add_subplot(2, 2, 4)
+        ax = fig.add_subplot(1, 4, 4)
         ax.scatter(rec_simple_knn[keep_mask, 0], rec_simple_knn[keep_mask, 1], c=c[keep_mask], s=10, rasterized=True)
         ax.set_xticks([])
         ax.set_yticks([])

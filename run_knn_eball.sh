@@ -1,0 +1,10 @@
+python src/main.py --dataset moon --K 900
+python src/main.py --dataset circles --K 900
+python src/main.py --dataset spiral --K 950
+python src/main.py --dataset swissroll2d --K 670
+python src/main.py --dataset scurve2d --K 730
+python src/main.py --dataset clusters --K 770
+python src/main.py --dataset grid --K 1280
+python src/main.py --dataset ring --K 730
+python src/main.py --dataset line --K 1080
+python src/main.py --dataset wave --K 650

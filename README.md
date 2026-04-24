@@ -1,167 +1,101 @@
-# Graph Neural Networks can Recover the Hidden Features Solely from the Graph Structure (ICML 2023)
+# GraphDecoding
 
 [![arXiv](https://img.shields.io/badge/arXiv-2301.10956-b31b1b.svg)](https://arxiv.org/abs/2301.10956)
 
-This repository is an improved and modularized implementation inspired by the paper:
-
-**Graph Neural Networks can Recover the Hidden Features Solely from the Graph Structure**  
-Ryoma Sato, ICML 2023  
-Paper: https://arxiv.org/abs/2301.10956
+Extended implementation of [Graph Neural Networks can Recover the Hidden Features Solely from the Graph Structure](https://arxiv.org/abs/2301.10956) (ICML 2023) by Ryoma Sato.
 
 ---
 
-## 🚀 SimpleScale
+## Method
 
-**SimpleScale** is the core model in this repo (`GraphSAGE_SimpleScale`).
+**Core Problem**: Given a graph structure (nodes + edge connectivity), can we recover the hidden geometric features of nodes?
 
-<img src="./imgs/simple_scale.png" alt="SimpleScale" />
+**SimpleScale Approach**:
+1. **Input**: Random/trivial node features + structural descriptors (PageRank, degree, clustering coefficient, etc.)
+2. **Architecture**: GraphSAGE-based message passing with density-aware scaling
+3. **Objective**: Reconstruct hidden geometry/manifold from pure graph structure
 
-- **Input**: trivial/random node features + structural descriptors (e.g., PageRank, in-degree, clustering coefficient).
-- **Architecture**: GraphSAGE-based message passing with density-aware scaling.
-- **Objective**: reconstruct hidden geometry/manifold from pure graph structure.
-
-In this codebase:
-- `src/main.py` runs the main 2D manifold decoding experiment.
-- `tools/semi_adult.py` runs the Adult dataset decoding experiment.
-- `tools/feature_analysis.py` analyzes and compares structural features.
+<img src="./imgs/framework.png" alt="Framework" />
 
 ---
 
-## 💿 Dependencies
+## Experiments
 
-Install all dependencies:
+### Experiment 1: KNN vs E-ball Comparison
+
+Compare SimpleScale with different neighborhood construction methods (KNN and e-ball).
 
 ```bash
-pip install -r requirements.txt
+# Single dataset
+python src/main.py --dataset moon --K 900
+
+# Full experiment suite
+bash run_knn_eball.sh
 ```
 
-If PyTorch installation fails due to CUDA/GPU environment issues, install a suitable build from the official website:
-https://pytorch.org/
+**Results** (lower dG is better):
 
----
+| Dataset | KNN Avg degree | e-ball Avg degree | KNN (dG) | e-ball (dG) | Best |
+|---------|----------------|-------------------|----------|-------------|------|
+| moon | 1005 | 999 | 0.0864 | 0.0051 | e-ball |
+| circles | 1090 | 1067 | 0.5997 | 0.0735 | e-ball |
+| spiral | 1041 | 1023.8 | 97.2098 | 1.3757 | e-ball |
+| swissroll2d | 753 | 755 | 0.5416 | 0.3908 | e-ball |
+| scurve2d | 781 | 774 | 0.0351 | 0.0562 | KNN |
+| clusters | 882 | 890 | 1.5990 | 6.5253 | KNN |
+| grid | 1502 | 1506 | 0.0623 | 0.0964 | e-ball |
+| ring | 744 | 743 | 0.0110 | 0.0189 | KNN |
+| line | 1195 | 1204 | 0.0878 | 0.0105 | e-ball |
+| wave | 699 | 702 | 11.8006 | 0.3658 | e-ball |
 
-## ⚙️ Quick Start
+### Experiment 2: GNN Architecture Comparison
 
-> Recommended from repository root. Use `PYTHONPATH=src` so scripts can import `utils` correctly.
-
-### 1) Main experiment (moon and other synthetic datasets)
-
-```bash
-PYTHONPATH=src python src/main.py
-```
-
-Use config file:
-
-```bash
-PYTHONPATH=src python src/main.py --config configs/default.yaml
-```
-
-Override key args from CLI:
+Compare different GNN architectures (Proposed, GIN, GAT) for hidden feature recovery.
 
 ```bash
-PYTHONPATH=src python src/main.py --dataset spiral --n 3000 --m 300
-```
-
-### 2) Adult experiment
-
-```bash
-PYTHONPATH=src python tools/semi_adult.py
-```
-
-### 3) Feature analysis tool
-
-Quick mode:
-
-```bash
-PYTHONPATH=src python tools/feature_analysis.py --dataset moon --n 1000 --m 100
-```
-
-Full search mode (slower):
-
-```bash
-PYTHONPATH=src python tools/feature_analysis.py --dataset moon --n 1000 --m 100 --full_search
+cd gnnrecover
+bash run_gnn.sh
 ```
 
 ---
 
-## 🗃️ Dataset Notes
-
-- `src/adult.data` is used by `tools/semi_adult.py`.
-- If you want to refresh/download the Adult dataset manually:
+## Quick Start
 
 ```bash
-wget https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data -O src/adult.data
+cd GraphDecoding
+
+# Setup environment
+uv venv --python 3.12
+uv pip install -r requirements.txt
+source .venv/bin/activate
+
+# Run experiments
+bash run_knn_eball.sh          # KNN vs e-ball comparison
+cd gnnrecover && bash run_gnn.sh  # GNN architecture comparison
 ```
 
 ---
 
-## 🧪 Configuration
+## Structure
 
-Main experiment reads `configs/default.yaml`:
-
-```yaml
-task:
-  dataset: moon
-  n: 5000
-  m: 500
-  train_ratio: 0.7
-
-graph:
-  knn_k_divisor: 10.0
-  eball_percentile: 5.0
-  eball_scaling_factor: 2.7
-
-training:
-  epochs: 100
-  lr: 0.002
-
-runtime:
-  seed: 0
-
-visualization:
-  keep_percentile: 97.0
-  fallback_keep_percentile: 95.0
-  min_keep_ratio: 0.5
 ```
-
----
-
-## 📂 Repository Structure
-
-```text
-new-version/
-├── configs/
-│   └── default.yaml
+GraphDecoding/
+├── configs/default.yaml      # Config file
 ├── src/
-│   ├── main.py
-│   ├── adult.data
-│   └── utils/
-│       ├── model.py
-│       ├── logging.py
-│       ├── datasets.py
-│       ├── visualization.py
-│       └── __init__.py
-├── tools/
-│   ├── semi_adult.py
-│   └── feature_analysis.py
-├── imgs/
-├── logs/
-├── visualize/
+│   ├── main.py               # SimpleScale (KNN/e-ball) entry point
+│   └── utils/                # Utilities
+├── gnnrecover/
+│   ├── main_all_dataset_gnn.py  # GNN comparison entry point
+│   ├── run_gnn.sh               # GNN experiment runner
+│   └── utils.py
+├── outputs/                   # Experiment outputs
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## 📈 Outputs
-
-- Logs: `logs/*.log`
-- Reconstruction figures: `visualize/*.png`
-- Feature-correlation plots: `visualize/feature_correlation_*.png`
-
----
-
-## 🖋️ Citation
+## Citation
 
 ```bibtex
 @inproceedings{sato2023graph,
@@ -171,9 +105,3 @@ new-version/
   year      = {2023},
 }
 ```
-
----
-
-## License
-
-This project follows the license in `LICENSE`.
